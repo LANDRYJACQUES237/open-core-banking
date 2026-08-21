@@ -1,0 +1,506 @@
+openapi: 3.0.3
+
+info:
+  title: Ledger API
+  version: 1.0.0
+  description: |
+    Grand livre en partie double, immuable.
+
+    Deux proprietes structurent cette API :
+
+    1. **Aucun champ solde n'est jamais ecrit.** Le solde retourne par
+       `GET /v1/accounts/{accountNumber}/balance` est la somme des ecritures.
+    2. **Aucune ecriture n'est jamais modifiee ni supprimee.** Une correction
+       se fait par contre-passation (`POST /v1/journal-entries/{entryRef}/reversal`),
+       qui cree une nouvelle ecriture inverse et laisse l'originale intacte.
+
+    Les montants circulent en **chaines de caracteres**, jamais en nombres JSON.
+    Un nombre JSON est parse en `double` par de nombreux clients, ce qui detruit
+    silencieusement la precision d'un montant. Le serveur convertit une seule fois,
+    a la frontiere, via `new BigDecimal(String)`.
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+servers:
+  - url: http://localhost:8081
+    description: Developpement local
+
+tags:
+  - name: accounts
+    description: Plan de comptes et soldes
+  - name: journal-entries
+    description: Ecritures en partie double
+
+paths:
+
+  /v1/accounts:
+    post:
+      tags: [accounts]
+      operationId: openAccount
+      summary: Ouvre un compte au grand livre
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpenAccountRequest'
+      responses:
+        '201':
+          description: Compte ouvert
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+        '200':
+          description: Requete rejouee avec la meme cle d'idempotence, compte deja ouvert
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+
+  /v1/accounts/{accountNumber}:
+    get:
+      tags: [accounts]
+      operationId: getAccount
+      summary: Consulte un compte
+      parameters:
+        - $ref: '#/components/parameters/AccountNumber'
+      responses:
+        '200':
+          description: Compte trouve
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/accounts/{accountNumber}/balance:
+    get:
+      tags: [accounts]
+      operationId: getAccountBalance
+      summary: Calcule le solde d'un compte
+      description: |
+        Le solde est calcule comme la somme algebrique des ecritures, eventuellement
+        acceleree par un instantane. L'instantane est un cache reconstructible :
+        le supprimer ne change jamais le resultat.
+      parameters:
+        - $ref: '#/components/parameters/AccountNumber'
+      responses:
+        '200':
+          description: Solde calcule
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Balance'
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/accounts/{accountNumber}/entries:
+    get:
+      tags: [accounts]
+      operationId: getAccountStatement
+      summary: Releve des mouvements d'un compte
+      parameters:
+        - $ref: '#/components/parameters/AccountNumber'
+        - name: page
+          in: query
+          schema: { type: integer, format: int32, minimum: 0, default: 0 }
+        - name: size
+          in: query
+          schema: { type: integer, format: int32, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        '200':
+          description: Releve
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatementPage'
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/journal-entries:
+    post:
+      tags: [journal-entries]
+      operationId: postJournalEntry
+      summary: Enregistre une ecriture en partie double
+      description: |
+        L'ecriture est refusee si la somme des debits ne vaut pas exactement la
+        somme des credits. Ce controle existe a deux niveaux independants :
+        dans le domaine, et sous forme de contrainte differee evaluee au COMMIT
+        par PostgreSQL.
+
+        Rejouer la requete avec la meme cle d'idempotence retourne l'ecriture
+        deja enregistree avec un `200`, sans creer de second mouvement d'argent.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PostJournalEntryRequest'
+      responses:
+        '201':
+          description: Ecriture enregistree
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JournalEntry'
+        '200':
+          description: Requete rejouee, ecriture deja enregistree
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JournalEntry'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+
+  /v1/journal-entries/{entryRef}:
+    get:
+      tags: [journal-entries]
+      operationId: getJournalEntry
+      summary: Consulte une ecriture
+      parameters:
+        - $ref: '#/components/parameters/EntryRef'
+      responses:
+        '200':
+          description: Ecriture trouvee
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JournalEntry'
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/journal-entries/{entryRef}/reversal:
+    post:
+      tags: [journal-entries]
+      operationId: reverseJournalEntry
+      summary: Contre-passe une ecriture
+      description: |
+        Cree une nouvelle ecriture dont chaque ligne inverse la direction de
+        l'originale. L'ecriture d'origine n'est ni modifiee ni supprimee.
+        Une ecriture ne peut etre contre-passee qu'une seule fois : la contrainte
+        d'unicite sur `reversesEntryRef` rend l'operation idempotente meme si
+        la compensation d'une saga est rejouee.
+      parameters:
+        - $ref: '#/components/parameters/EntryRef'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReversalRequest'
+      responses:
+        '201':
+          description: Contre-passation enregistree
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JournalEntry'
+        '200':
+          description: Ecriture deja contre-passee, la contre-passation existante est retournee
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JournalEntry'
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+
+components:
+
+  parameters:
+
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |
+        Cle choisie par l'appelant. Rejouer la meme cle avec le meme contenu
+        retourne la ressource deja creee. Rejouer la meme cle avec un contenu
+        different retourne `422` : c'est un bug appelant, pas une nouvelle operation.
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 200
+      example: 7d9f2c11-4c2e-4d84-9a3f-0f2b6a1c9e10
+
+    AccountNumber:
+      name: accountNumber
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^[0-9]{4}(\.[A-Za-z0-9_-]{1,64})?$'
+      example: "2100.wallet-c"
+
+    EntryRef:
+      name: entryRef
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 100
+      example: JE-2026-000042
+
+  schemas:
+
+    Amount:
+      type: string
+      description: |
+        Montant decimal, strictement positif sur une ligne d'ecriture.
+        Transporte en chaine pour preserver la precision.
+        L'echelle doit respecter la devise : le XAF n'a aucune decimale.
+      pattern: '^(0|[1-9][0-9]{0,17})(\.[0-9]{1,4})?$'
+      example: "10000"
+
+    SignedAmount:
+      type: string
+      description: Montant decimal signe. Un solde peut etre negatif.
+      pattern: '^-?(0|[1-9][0-9]{0,17})(\.[0-9]{1,4})?$'
+      example: "-9900"
+
+    Currency:
+      type: string
+      description: Code devise ISO 4217.
+      pattern: '^[A-Z]{3}$'
+      example: XAF
+
+    AccountType:
+      type: string
+      enum: [ASSET, LIABILITY, REVENUE, EXPENSE, EQUITY]
+      description: |
+        Determine le cote normal du compte, donc le signe du solde.
+        ASSET et EXPENSE sont debiteurs par nature ; LIABILITY, REVENUE et
+        EQUITY sont crediteurs. Un portefeuille client est un LIABILITY :
+        l'argent du client est une dette de la plateforme envers lui.
+
+    AccountStatus:
+      type: string
+      enum: [ACTIVE, FROZEN, CLOSED]
+
+    Direction:
+      type: string
+      enum: [DR, CR]
+      description: Debit ou credit. La direction porte le signe, le montant reste positif.
+
+    OpenAccountRequest:
+      type: object
+      required: [accountNumber, accountType, currency]
+      properties:
+        accountNumber:
+          type: string
+          pattern: '^[0-9]{4}(\.[A-Za-z0-9_-]{1,64})?$'
+          description: Code du plan de comptes, suffixe optionnel pour les sous-comptes.
+          example: "2100.wallet-c"
+        accountType:
+          $ref: '#/components/schemas/AccountType'
+        currency:
+          $ref: '#/components/schemas/Currency'
+        ownerRef:
+          type: string
+          maxLength: 100
+          description: |
+            Reference **opaque** du titulaire. Le grand livre ne connait aucune
+            donnee personnelle : ni MSISDN, ni identite, ni statut KYC.
+          example: wallet-c
+        name:
+          type: string
+          maxLength: 200
+          example: Portefeuille client C
+
+    Account:
+      type: object
+      required: [accountNumber, accountType, normalSide, currency, status, openedAt]
+      properties:
+        accountNumber: { type: string, example: "2100.wallet-c" }
+        accountType: { $ref: '#/components/schemas/AccountType' }
+        normalSide: { $ref: '#/components/schemas/Direction' }
+        currency: { $ref: '#/components/schemas/Currency' }
+        ownerRef: { type: string, nullable: true }
+        name: { type: string, nullable: true }
+        status: { $ref: '#/components/schemas/AccountStatus' }
+        openedAt: { type: string, format: date-time }
+
+    Balance:
+      type: object
+      required: [accountNumber, currency, balance, computedAt, entrySeq]
+      properties:
+        accountNumber: { type: string }
+        currency: { $ref: '#/components/schemas/Currency' }
+        # Solde exprime dans le sens normal du compte : positif quand le compte
+        # va dans le sens attendu de son type (debiteur pour ASSET/EXPENSE,
+        # crediteur pour LIABILITY/REVENUE/EQUITY).
+        balance:
+          $ref: '#/components/schemas/SignedAmount'
+        entrySeq:
+          type: integer
+          format: int64
+          description: |
+            Numero de la derniere ecriture prise en compte. Permet a un appelant
+            de savoir exactement a quel point du grand livre le solde correspond.
+        computedAt: { type: string, format: date-time }
+
+    PostingLineRequest:
+      type: object
+      required: [accountNumber, direction, amount, currency]
+      properties:
+        accountNumber: { type: string, example: "1100" }
+        direction: { $ref: '#/components/schemas/Direction' }
+        amount: { $ref: '#/components/schemas/Amount' }
+        currency: { $ref: '#/components/schemas/Currency' }
+
+    PostingLine:
+      type: object
+      required: [lineNo, accountNumber, direction, amount, currency]
+      properties:
+        lineNo: { type: integer, format: int32 }
+        accountNumber: { type: string }
+        direction: { $ref: '#/components/schemas/Direction' }
+        amount: { $ref: '#/components/schemas/Amount' }
+        currency: { $ref: '#/components/schemas/Currency' }
+
+    PostJournalEntryRequest:
+      type: object
+      required: [description, lines]
+      properties:
+        entryRef:
+          type: string
+          maxLength: 100
+          description: Reference fonctionnelle. Generee par le serveur si absente.
+        transactionRef:
+          type: string
+          maxLength: 100
+          description: Reference de la transaction metier a l'origine de l'ecriture.
+        description:
+          type: string
+          minLength: 1
+          maxLength: 500
+        valueDate:
+          type: string
+          format: date
+          description: Date de valeur comptable. Par defaut, la date du jour.
+        lines:
+          type: array
+          minItems: 2
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/PostingLineRequest'
+
+    JournalEntry:
+      type: object
+      required: [entryRef, entrySeq, description, valueDate, postedAt, lines]
+      properties:
+        entryRef: { type: string }
+        entrySeq: { type: integer, format: int64 }
+        transactionRef: { type: string, nullable: true }
+        description: { type: string }
+        valueDate: { type: string, format: date }
+        postedAt: { type: string, format: date-time }
+        reversesEntryRef:
+          type: string
+          nullable: true
+          description: Renseigne si cette ecriture contre-passe une autre ecriture.
+        reversedByEntryRef:
+          type: string
+          nullable: true
+          description: Renseigne si cette ecriture a ete contre-passee.
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/PostingLine'
+
+    ReversalRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+        entryRef:
+          type: string
+          maxLength: 100
+          description: Reference a donner a l'ecriture de contre-passation.
+
+    StatementLine:
+      type: object
+      required: [entryRef, entrySeq, postedAt, valueDate, description, direction, amount, currency, runningBalance]
+      properties:
+        entryRef: { type: string }
+        entrySeq: { type: integer, format: int64 }
+        postedAt: { type: string, format: date-time }
+        valueDate: { type: string, format: date }
+        description: { type: string }
+        transactionRef: { type: string, nullable: true }
+        direction: { $ref: '#/components/schemas/Direction' }
+        amount: { $ref: '#/components/schemas/Amount' }
+        currency: { $ref: '#/components/schemas/Currency' }
+        # Solde du compte apres application de cette ligne.
+        runningBalance:
+          $ref: '#/components/schemas/SignedAmount'
+
+    StatementPage:
+      type: object
+      required: [accountNumber, page, size, totalElements, content]
+      properties:
+        accountNumber: { type: string }
+        page: { type: integer, format: int32 }
+        size: { type: integer, format: int32 }
+        totalElements: { type: integer, format: int64 }
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/StatementLine'
+
+    Problem:
+      type: object
+      description: Reponse d'erreur conforme a la RFC 7807.
+      required: [type, title, status]
+      properties:
+        type: { type: string, format: uri, example: "https://ocb.dev/problems/unbalanced-entry" }
+        title: { type: string, example: "Ecriture desequilibree" }
+        status: { type: integer, format: int32, example: 422 }
+        detail: { type: string }
+        instance: { type: string }
+        code:
+          type: string
+          description: Code d'erreur stable, destine au code appelant plutot qu'a un humain.
+          example: LEDGER_UNBALANCED_ENTRY
+        correlationId: { type: string }
+        errors:
+          type: array
+          description: Detail par champ, pour les erreurs de validation.
+          items:
+            type: object
+            properties:
+              field: { type: string }
+              message: { type: string }
+
+  responses:
+    BadRequest:
+      description: Requete malformee
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: Ressource introuvable
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Conflict:
+      description: Conflit avec l'etat courant de la ressource
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    UnprocessableEntity:
+      description: Requete syntaxiquement valide mais refusee par une regle metier
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }

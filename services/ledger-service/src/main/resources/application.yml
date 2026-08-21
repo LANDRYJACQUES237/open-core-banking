@@ -1,0 +1,76 @@
+spring:
+  application:
+    name: ledger-service
+
+  # Utilisateur d'execution : droits minimaux. Il ne peut ni modifier ni supprimer une
+  # ecriture, parce que la migration V5 ne lui accorde que SELECT et INSERT sur le journal.
+  datasource:
+    url: ${LEDGER_DB_URL:jdbc:postgresql://localhost:5432/ledger}
+    username: ${LEDGER_DB_USER:ledger_app}
+    password: ${LEDGER_DB_PASSWORD:}
+    hikari:
+      pool-name: ledger-pool
+      maximum-pool-size: ${LEDGER_DB_POOL_SIZE:10}
+      # Borne la duree d'une transaction d'ecriture. C'est ce qui rend valide le retard
+      # applique a la consolidation des instantanes (voir JdbcBalanceStore#refreshSnapshots) :
+      # aucune ecriture ne peut rester en vol plus longtemps que ce delai.
+      connection-init-sql: SET idle_in_transaction_session_timeout = '15s'
+
+  flyway:
+    enabled: true
+    schemas: ledger
+    default-schema: ledger
+    # Utilisateur de migration, distinct de l'utilisateur d'execution : c'est lui qui
+    # possede le schema et qui accorde les droits. Les confondre reviendrait a donner
+    # a l'application le pouvoir de retirer ses propres garde-fous.
+    user: ${LEDGER_DB_MIGRATION_USER:postgres}
+    password: ${LEDGER_DB_MIGRATION_PASSWORD:}
+    placeholders:
+      ledgerAppRole: ${LEDGER_APP_ROLE:ledger_app}
+
+  jackson:
+    default-property-inclusion: non_null
+
+server:
+  port: ${LEDGER_PORT:8081}
+  error:
+    include-message: never
+    include-stacktrace: never
+
+ledger:
+  maintenance:
+    enabled: true
+  snapshot:
+    # Retard de consolidation. Doit rester superieur a la duree maximale d'une
+    # transaction d'ecriture, bornee ci-dessus par idle_in_transaction_session_timeout.
+    lag-seconds: 30
+    interval: PT60S
+  audit:
+    seal-interval: PT30S
+  integrity:
+    interval: PT300S
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+  health:
+    # La sonde de vivacite ignore volontairement la base : une coupure de PostgreSQL
+    # doit rendre le pod non pret, pas le faire redemarrer en boucle. Un redemarrage
+    # ne repare pas une base indisponible, il aggrave la charge au retour.
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%X{correlationId:-}] %logger{36} - %msg%n"
+  level:
+    com.ocb: ${LEDGER_LOG_LEVEL:INFO}

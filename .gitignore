@@ -1,0 +1,33 @@
+# Build
+target/
+build/
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+
+# Secrets — jamais dans le depot.
+# .env.example est versionne avec des valeurs factices ; .env ne l'est jamais.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.jks
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.classpath
+.project
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/

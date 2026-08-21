@@ -1,0 +1,11 @@
+-- Cree le role d'execution avant que Flyway ne migre, afin que la migration V5 ait
+-- quelque chose a qui accorder des droits.
+--
+-- Ce script reproduit la separation de production : l'utilisateur qui migre possede le
+-- schema, l'utilisateur qui fait tourner l'application ne recoit que le minimum. Les
+-- tests s'executent donc sous les memes contraintes de droits qu'en production, ce qui
+-- permet de verifier que l'application n'a jamais besoin de modifier une ecriture.
+--
+-- Le mot de passe est propre aux tests et jetable : il ne donne acces qu'a un conteneur
+-- ephemere cree et detruit par la suite de tests.
+CREATE ROLE ledger_app LOGIN PASSWORD 'app-secret';

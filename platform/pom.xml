@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.ocb</groupId>
+        <artifactId>open-core-banking</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>platform</artifactId>
+    <packaging>pom</packaging>
+    <name>Platform (plomberie technique partagee)</name>
+    <description>
+        Modules techniques partages. Regle opposable : aucune logique metier ici,
+        aucune entite persistante partagee entre deux bases de service.
+    </description>
+
+    <modules>
+        <module>common-domain</module>
+        <module>common-web</module>
+    </modules>
+</project>
