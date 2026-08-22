@@ -1,0 +1,17 @@
+# Normalisation des fins de ligne.
+#
+# Le developpement se fait sous Windows, la CI sous Linux. Sans cette declaration,
+# mvnw peut se retrouver avec des CRLF et le runner Linux echoue sur un
+# "bad interpreter" difficile a diagnostiquer parce qu'il ne ressemble pas a une
+# erreur de fin de ligne.
+* text=auto eol=lf
+
+mvnw          text eol=lf
+*.sh          text eol=lf
+mvnw.cmd      text eol=crlf
+*.bat         text eol=crlf
+
+*.jar         binary
+*.png         binary
+*.jpg         binary
+*.pdf         binary
