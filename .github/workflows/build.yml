@@ -1,0 +1,72 @@
+name: build
+
+# Le developpement local se fait sur JDK 25 avec maven.compiler.release=21.
+# La CI, elle, compile ET execute sur JDK 21 : c'est la cible de production.
+# Tout ecart de comportement entre les deux doit se reveler ici, dans un pipeline
+# qui tourne a chaque push, plutot que tardivement sur un environnement reel.
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: JDK 21 - build, tests unitaires et integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Recuperer le depot
+        uses: actions/checkout@v4
+
+      - name: Installer le JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      # Garde-fou de l'exigence "aucun secret dans le depot". Deterministe et sans
+      # dependance externe : il echoue si un fichier de secrets a ete versionne par
+      # accident, quel que soit son contenu. Un scanner d'entropie type gitleaks
+      # viendra en complement quand le depot sera public.
+      - name: Verifier qu'aucun secret n'est versionne
+        run: |
+          tracked=$(git ls-files | grep -E '(^|/)\.env$|(^|/)\.env\.(local|dev|prod|production)$|\.pem$|\.key$|\.p12$|\.jks$|(^|/)id_rsa' || true)
+          if [ -n "$tracked" ]; then
+            echo "::error::Fichiers sensibles versionnes :"
+            echo "$tracked"
+            exit 1
+          fi
+          echo "Aucun fichier sensible versionne."
+
+      - name: Verifier que le wrapper Maven est executable
+        run: chmod +x ./mvnw
+
+      # `verify` execute les deux suites : surefire (unitaires, sans Docker) puis
+      # failsafe (integration, Testcontainers). Docker est preinstalle sur les
+      # runners ubuntu-latest, donc les tests d'integration tournent reellement —
+      # y compris la contrainte differee et les droits PostgreSQL, qui n'ont aucun
+      # sens sans un vrai serveur.
+      - name: Build et tests
+        run: ./mvnw -B -ntp verify
+
+      - name: Publier les rapports de test
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rapports-de-test-jdk21
+          path: |
+            **/target/surefire-reports/**
+            **/target/failsafe-reports/**
+          retention-days: 14
+          if-no-files-found: ignore

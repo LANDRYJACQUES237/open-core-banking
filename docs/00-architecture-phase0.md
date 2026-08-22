@@ -552,6 +552,8 @@ La course callback/poller est résolue par le `SELECT ... FOR UPDATE` de §7.2 :
 
 ## 8. Sécurité et audit (exigences n°9 et n°10)
 
+> **Calendrier — décision du 2026-08-21.** La couche OIDC est câblée en **Phase 3**, pas en Phase 5. Raison : c'est la phase où `provider-service` introduit une exposition publique (webhooks) et des secrets opérateurs. Ajouter la sécurité en fin de projet la ferait apparaître comme une couche rapportée — un défaut immédiatement visible pour un relecteur, et l'inverse de ce que ce projet doit démontrer. La Phase 5 ne conservera que le déploiement des secrets (Secrets Kubernetes, rotation).
+
 **Authentification.** Keycloak comme fournisseur OIDC (realm `ocb`). Chaque service est un resource server Spring Security validant le JWT localement via JWKS — pas de validation centralisée, pas de SPOF.
 
 **Autorisation.** Portées fines, pas de rôle « admin » fourre-tout :
@@ -684,7 +686,7 @@ Peu coûteux, et c'est ce qui fait la différence en démonstration.
 | **0** | Ce document | — |
 | **1** | `ledger-service` : plan de comptes, écritures, immuabilité, soldes + instantanés, API REST, tests complets. Modules `platform/` minimaux. Pas de Kafka | + contrainte différée en base, + instantanés de solde |
 | **2** | `payment-service` : idempotence, machine à états, outbox + relais, encaissement de bout en bout avec un stub opérateur en interne. Kafka entre en jeu | inchangé |
-| **3** | `provider-service` : abstraction opérateur, simulateur pilotable, webhooks signés, polling avec budget, résolution `unresolved`. Le stub de la Phase 2 est retiré | + budget de polling explicite et état `MANUAL_REVIEW` |
+| **3** | `provider-service` : abstraction opérateur, simulateur pilotable, webhooks signés, polling avec budget, résolution `unresolved`. Le stub de la Phase 2 est retiré. **+ sécurité OIDC sur tous les services** | + budget de polling explicite et état `MANUAL_REVIEW` ; sécurité avancée depuis la Phase 5 (voir §8) |
 | **4** | `notification-service` (consommateur idempotent, DLQ) + **saga de décaissement avec compensation**. Le transfert portefeuille-à-portefeuille est livré comme écriture atomique, avec l'explication du choix | saga déplacée du transfert vers le décaissement (§2.4) |
 | **5** | Docker Compose complet, Helm, sondes, configuration externalisée, secrets, observabilité | + Prometheus/Grafana/Jaeger, + option Debezium |
 | **6** | README d'architecture, diagrammes C4, ADR, guide de démarrage, OpenAPI publiée | + ADR versionnés au fil de l'eau, pas seulement à la fin |

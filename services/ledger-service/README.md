@@ -21,6 +21,48 @@ justifient sont dans [docs/00-architecture-phase0.md](../../docs/00-architecture
 
 ---
 
+## Pourquoi JdbcClient et pas JPA
+
+C'est le choix technique le plus discutable du service, donc celui qui merite d'etre
+argumente. Trois raisons, dans cet ordre d'importance.
+
+**1. Le dirty checking de JPA est incompatible avec des tables immuables.**
+
+Une entite chargee dans un contexte de persistance est surveillee : toute modification de
+ses champs, meme involontaire — un mapper, un setter appele par erreur, une methode qui
+normalise une valeur — produit un `UPDATE` au flush. Sur `journal_entry` et
+`posting_line`, ce `UPDATE` se heurterait au trigger d'immuabilite et deviendrait une
+exception a l'execution, sur un chemin de code qui n'aurait jamais du exister.
+
+L'objection habituelle est `@Immutable` de Hibernate. Elle rend l'entite non modifiable,
+mais c'est une garantie de la couche de mapping, pas une propriete du systeme : elle
+disparait des qu'on ecrit une requete native, qu'on passe par un autre contexte, ou qu'on
+change de fournisseur JPA. Ici, l'absence d'un chemin d'ecriture mutable est structurelle.
+
+**2. Le schema repose sur des constructions que JPA modelise mal.**
+
+Colonne generee (`signed_amount`), colonne identite (`entry_seq`), contrainte differee
+evaluee au COMMIT, `INSERT ... ON CONFLICT DO NOTHING RETURNING`, fonctions de fenetrage
+pour le solde progressif. Chacune obligerait a du SQL natif ou a des annotations de
+contournement. Au bout du compte, on ecrirait du SQL derriere une abstraction qui ne
+sert plus a rien, tout en payant son cout.
+
+**3. Le controle du moment des ecritures est ici une exigence, pas un detail.**
+
+L'idempotence repose sur `ON CONFLICT DO NOTHING`, dont le comportement bloquant sous
+concurrence est ce qui rend l'operation sure. La validation par la base repose sur un
+`SET CONSTRAINTS ALL IMMEDIATE` emis a un instant precis. Ces deux mecanismes supposent
+de savoir exactement quelle instruction part et quand — ce que le flush automatique de
+JPA rend justement imprevisible.
+
+**Ce que ce choix coute.** Pas de cache de premier niveau, pas de navigation par
+associations, du mapping ligne a ligne ecrit a la main. Sur un service dont les
+agregats sont petits, plats et lus par identifiant, ces fonctionnalites n'auraient
+pas servi. Sur un service metier riche, la conclusion serait probablement inverse — et
+ce n'est pas une regle generale du projet : `payment-service` sera evalue separement.
+
+---
+
 ## Prerequis
 
 - JDK 21 (le projet cible `release 21`)
@@ -162,9 +204,11 @@ code appelant plutot qu'a un humain.
 
 Elles sont listees ici plutot que decouvertes plus tard.
 
-- **Aucune authentification.** Le service est ouvert. La securite (Keycloak, portees
-  `ledger:read` / `ledger:post`) arrive en Phase 5. La couche est prevue, elle n'est pas
-  cablee.
+- **Aucune authentification pour l'instant.** Le service est ouvert. La couche resource
+  server OIDC (Keycloak, portees `ledger:read` et `ledger:post`) est cablee en **Phase 3**,
+  au moment ou `provider-service` introduit des secrets operateurs et une exposition
+  publique. Elle n'est pas repoussee en fin de projet : une securite ajoutee a la fin se
+  voit, et c'est exactement ce qu'il ne faut pas montrer.
 - **Pagination du releve par decalage.** Le solde progressif est calcule par fonction de
   fenetrage sur tout l'historique du compte, puis la page est decoupee : chaque page relit
   l'historique complet. A l'echelle, il faudra partir de l'instantane et paginer par cle.

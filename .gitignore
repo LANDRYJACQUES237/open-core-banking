@@ -31,3 +31,8 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# jqwik conserve les echantillons ayant fait echouer une propriete, pour les rejouer
+# en priorite au run suivant. C'est un cache local de la machine du developpeur :
+# le versionner ferait diverger le comportement des tests entre postes et CI.
+.jqwik-database
