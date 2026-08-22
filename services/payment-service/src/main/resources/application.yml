@@ -1,0 +1,95 @@
+spring:
+  application:
+    name: payment-service
+
+  datasource:
+    url: ${PAYMENT_DB_URL:jdbc:postgresql://localhost:5432/payment}
+    username: ${PAYMENT_DB_USER:payment_app}
+    password: ${PAYMENT_DB_PASSWORD:}
+    hikari:
+      pool-name: payment-pool
+      maximum-pool-size: ${PAYMENT_DB_POOL_SIZE:10}
+
+  flyway:
+    enabled: true
+    schemas: payment
+    default-schema: payment
+    # Utilisateur de migration distinct de l'utilisateur d'execution : les confondre
+    # donnerait a l'application le pouvoir de retirer ses propres garde-fous.
+    user: ${PAYMENT_DB_MIGRATION_USER:postgres}
+    password: ${PAYMENT_DB_MIGRATION_PASSWORD:}
+    placeholders:
+      paymentAppRole: ${PAYMENT_APP_ROLE:payment_app}
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      # acks=all et idempotence activee : sans cela, une reelection de leader peut
+      # faire perdre un message deja accuse, ou le dupliquer sur retentative interne.
+      acks: all
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      auto-offset-reset: earliest
+      # Validation manuelle des offsets par le conteneur, apres retour du listener :
+      # un offset valide avant traitement transformerait un redemarrage en perte de message.
+      enable-auto-commit: false
+    listener:
+      ack-mode: record
+
+  jackson:
+    default-property-inclusion: non_null
+
+server:
+  port: ${PAYMENT_PORT:8082}
+  error:
+    include-message: never
+    include-stacktrace: never
+
+ocb:
+  ledger:
+    base-url: ${LEDGER_BASE_URL:http://localhost:8081}
+    connect-timeout: PT2S
+    # Court volontairement : au-dela, mieux vaut laisser le message etre redelivre que
+    # de tenir une transaction et un verrou de ligne ouverts.
+    read-timeout: PT10S
+
+  outbox:
+    schema: payment
+    batch-size: 100
+    poll-interval: PT1S
+    send-timeout: PT10S
+    retention: P7D
+
+  fees:
+    collection:
+      # 1 % des encaissements.
+      basis-points: 100
+      fixed: 0
+
+  provider:
+    simulator:
+      # Echafaudage de Phase 2 : remplace par provider-service en Phase 3.
+      enabled: ${PROVIDER_SIMULATOR_ENABLED:true}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%X{correlationId:-}] %logger{36} - %msg%n"
+  level:
+    com.ocb: ${PAYMENT_LOG_LEVEL:INFO}

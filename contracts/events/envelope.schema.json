@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ocb.dev/events/envelope.schema.json",
+  "title": "Enveloppe d'evenement",
+  "description": "Structure commune a tout message publie sur Kafka par la plateforme.",
+  "type": "object",
+  "required": [
+    "eventId",
+    "eventType",
+    "eventVersion",
+    "occurredAt",
+    "aggregateType",
+    "aggregateId",
+    "producer",
+    "payload"
+  ],
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Identifiant unique de cet evenement. Cle de deduplication cote consommateur : Kafka livre au moins une fois, ce champ est ce qui permet de reconnaitre un doublon."
+    },
+    "eventType": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9_]*)+$",
+      "description": "Type metier, par exemple payment.collection.completed."
+    },
+    "eventVersion": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Version majeure du contrat de ce type d'evenement."
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Instant ou le fait s'est produit, en UTC. Distinct de l'instant de publication."
+    },
+    "aggregateType": {
+      "type": "string",
+      "minLength": 1
+    },
+    "aggregateId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Identifiant de l'agregat. Sert de cle de partition Kafka, ce qui garantit l'ordre des evenements d'une meme transaction."
+    },
+    "correlationId": {
+      "type": ["string", "null"],
+      "description": "Identifiant qui traverse tout le flux, du premier appel REST a la notification finale."
+    },
+    "causationId": {
+      "type": ["string", "null"],
+      "description": "Identifiant de l'evenement ou de la commande qui a cause celui-ci."
+    },
+    "producer": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Service emetteur."
+    },
+    "payload": {
+      "type": "object",
+      "description": "Charge utile, dont la structure depend de eventType."
+    }
+  },
+  "additionalProperties": false
+}

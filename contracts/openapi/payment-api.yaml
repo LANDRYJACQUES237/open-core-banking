@@ -1,0 +1,298 @@
+openapi: 3.0.3
+
+info:
+  title: Payment API
+  version: 1.0.0
+  description: |
+    Orchestration des encaissements et decaissements Mobile Money.
+
+    **Une demande d'encaissement ne rend pas un resultat, elle rend un accuse de prise
+    en charge.** Un paiement Mobile Money est asynchrone par nature : le client doit
+    approuver sur son telephone, l'operateur repond quand il repond. L'API retourne donc
+    `202` avec un identifiant de transaction, et l'issue se recupere par consultation ou
+    arrive par evenement.
+
+    Repondre `200` avec un statut final obligerait a attendre l'operateur pendant l'appel
+    HTTP, donc a tenir une connexion ouverte pendant un delai qu'on ne controle pas, et a
+    inventer un resultat en cas de timeout — exactement ce qu'il ne faut pas faire.
+
+    Les montants circulent en chaines de caracteres, jamais en nombres JSON.
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+servers:
+  - url: http://localhost:8082
+    description: Developpement local
+
+tags:
+  - name: collections
+    description: Encaissements depuis un portefeuille Mobile Money
+  - name: transactions
+    description: Consultation des transactions
+
+paths:
+
+  /v1/collections:
+    post:
+      tags: [collections]
+      operationId: requestCollection
+      summary: Demande un encaissement
+      description: |
+        Enregistre la demande, la place en attente de l'operateur et emet la commande
+        correspondante. Rejouer la requete avec la meme cle d'idempotence retourne la
+        transaction existante avec un `200`, sans declencher un second prelevement.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CollectionRequest'
+      responses:
+        '202':
+          description: Demande prise en charge
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '200':
+          description: Requete rejouee, transaction deja enregistree
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+
+  /v1/transactions/{transactionId}:
+    get:
+      tags: [transactions]
+      operationId: getTransaction
+      summary: Consulte une transaction
+      parameters:
+        - $ref: '#/components/parameters/TransactionId'
+      responses:
+        '200':
+          description: Transaction trouvee
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/transactions/{transactionId}/transitions:
+    get:
+      tags: [transactions]
+      operationId: getTransactionTransitions
+      summary: Historique des transitions d'etat
+      description: |
+        Journal complet, y compris les transitions **refusees**. Un callback tardif ou
+        duplique y apparait avec `accepted: false` et le motif du refus.
+
+        C'est ce qui rend la machine a etats verifiable : la preuve qu'un doublon a ete
+        neutralise est une ligne en base, pas une ligne de log qui aura ete purgee.
+      parameters:
+        - $ref: '#/components/parameters/TransactionId'
+      responses:
+        '200':
+          description: Historique
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StateTransition'
+        '404': { $ref: '#/components/responses/NotFound' }
+
+components:
+
+  parameters:
+
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |
+        Cle choisie par l'appelant. Meme cle et meme contenu retourne la transaction deja
+        creee. Meme cle et contenu different retourne `422` : c'est un bug appelant, pas
+        une nouvelle operation.
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 200
+
+    TransactionId:
+      name: transactionId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+
+    Amount:
+      type: string
+      pattern: '^(0|[1-9][0-9]{0,17})(\.[0-9]{1,4})?$'
+      example: "10000"
+
+    Currency:
+      type: string
+      pattern: '^[A-Z]{3}$'
+      example: XAF
+
+    ProviderCode:
+      type: string
+      enum: [MTN_MOMO, ORANGE_MONEY]
+
+    TransactionType:
+      type: string
+      enum: [COLLECTION, DISBURSEMENT, TRANSFER]
+
+    TransactionStatus:
+      type: string
+      enum:
+        - CREATED
+        - PENDING_PROVIDER
+        - PROVIDER_ACCEPTED
+        - PROVIDER_CONFIRMED
+        - PROVIDER_DECLINED
+        - POSTING
+        - COMPENSATING
+        - MANUAL_REVIEW
+        - COMPLETED
+        - FAILED
+        - REVERSED
+      description: |
+        `COMPLETED`, `FAILED` et `REVERSED` sont terminaux et definitifs : aucune
+        transition n'en sort.
+
+        `MANUAL_REVIEW` n'est **pas** un echec. Il signale qu'aucune conclusion n'a pu
+        etre tiree — typiquement une absence de reponse de l'operateur — et que l'argent
+        a peut-etre bouge. Seule la reconciliation tranche.
+
+    CollectionRequest:
+      type: object
+      required: [externalRef, amount, currency, payerMsisdn, walletAccountRef, providerCode]
+      properties:
+        externalRef:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Reference de l'appelant, pour rapprochement de son cote.
+        amount:
+          $ref: '#/components/schemas/Amount'
+        currency:
+          $ref: '#/components/schemas/Currency'
+        payerMsisdn:
+          type: string
+          pattern: '^\+[0-9]{9,15}$'
+          description: |
+            Numero du payeur, au format international. Il n'est **pas conserve en clair**
+            par ce service : seule sa forme masquee est stockee. Le numero complet est
+            transmis une fois a l'adaptateur operateur, qui en a besoin pour appeler
+            l'operateur.
+          example: "+237670000001"
+        walletAccountRef:
+          type: string
+          maxLength: 100
+          description: Compte du grand livre a crediter.
+          example: "2100.wallet-c"
+        providerCode:
+          $ref: '#/components/schemas/ProviderCode'
+
+    Transaction:
+      type: object
+      required: [transactionId, externalRef, type, status, amount, currency, platformFee, walletAccountRef, providerCode, createdAt, updatedAt]
+      properties:
+        transactionId: { type: string, format: uuid }
+        externalRef: { type: string }
+        type: { $ref: '#/components/schemas/TransactionType' }
+        status: { $ref: '#/components/schemas/TransactionStatus' }
+        amount: { $ref: '#/components/schemas/Amount' }
+        currency: { $ref: '#/components/schemas/Currency' }
+        platformFee: { $ref: '#/components/schemas/Amount' }
+        providerFee:
+          type: string
+          nullable: true
+          description: Commission de l'operateur, connue seulement une fois l'operation aboutie.
+        walletAccountRef: { type: string }
+        providerCode: { $ref: '#/components/schemas/ProviderCode' }
+        maskedMsisdn:
+          type: string
+          nullable: true
+          example: "+2376****0001"
+        providerRef:
+          type: string
+          nullable: true
+          description: Reference attribuee par l'operateur.
+        ledgerEntryRef:
+          type: string
+          nullable: true
+          description: Reference de l'ecriture comptable, une fois le mouvement enregistre.
+        failureCode:
+          type: string
+          nullable: true
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    StateTransition:
+      type: object
+      required: [toStatus, triggerEvent, accepted, occurredAt]
+      properties:
+        fromStatus:
+          type: string
+          nullable: true
+        toStatus: { type: string }
+        triggerEvent: { type: string }
+        accepted:
+          type: boolean
+          description: Faux pour une transition refusee, par exemple un callback tardif sur un etat terminal.
+        rejectionReason:
+          type: string
+          nullable: true
+        occurredAt: { type: string, format: date-time }
+
+    Problem:
+      type: object
+      required: [type, title, status]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer, format: int32 }
+        detail: { type: string }
+        instance: { type: string }
+        code: { type: string }
+        correlationId: { type: string }
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field: { type: string }
+              message: { type: string }
+
+  responses:
+    BadRequest:
+      description: Requete malformee
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: Ressource introuvable
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Conflict:
+      description: Conflit avec l'etat courant
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    UnprocessableEntity:
+      description: Requete valide mais refusee par une regle metier
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }

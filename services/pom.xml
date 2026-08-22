@@ -16,5 +16,6 @@
 
     <modules>
         <module>ledger-service</module>
+        <module>payment-service</module>
     </modules>
 </project>

@@ -47,6 +47,16 @@
                 <version>${project.version}</version>
             </dependency>
             <dependency>
+                <groupId>com.ocb</groupId>
+                <artifactId>common-events</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.ocb</groupId>
+                <artifactId>common-outbox</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
                 <groupId>net.jqwik</groupId>
                 <artifactId>jqwik</artifactId>
                 <version>${jqwik.version}</version>

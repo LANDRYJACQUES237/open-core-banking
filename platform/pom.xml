@@ -21,5 +21,7 @@
     <modules>
         <module>common-domain</module>
         <module>common-web</module>
+        <module>common-events</module>
+        <module>common-outbox</module>
     </modules>
 </project>
