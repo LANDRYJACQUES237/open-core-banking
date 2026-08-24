@@ -200,6 +200,49 @@ public abstract class PaymentKafkaTestBase {
                         .isEqualTo(expected));
     }
 
+    /**
+     * Attend que le relais ait publie tous les evenements d'une transaction.
+     *
+     * <p>Cette attente est <b>necessaire et non defensive</b>. Le dernier evenement est
+     * ecrit dans la meme transaction que le passage a l'etat terminal : a l'instant ou ce
+     * statut devient observable, l'evenement existe deja mais n'est pas encore publie. Le
+     * relais est asynchrone par construction — c'est precisement ce que l'outbox apporte,
+     * la transaction metier ne depend pas du bus.
+     *
+     * <p>Affirmer directement que tout est publie apres avoir attendu le statut revient
+     * donc a attendre un etat puis a asserter une propriete qui, par construction, arrive
+     * apres lui. C'est la forme la plus courante d'assertion implicitement temporelle.
+     */
+    protected void awaitOutboxDrained(String transactionId) {
+        await().atMost(SETTLE_TIMEOUT)
+                .pollInterval(Duration.ofMillis(100))
+                .untilAsserted(() -> org.assertj.core.api.Assertions
+                        .assertThat(unpublishedOutboxCount(transactionId))
+                        .as("%s", diagnostics(transactionId))
+                        .isZero());
+    }
+
+    /**
+     * Attend qu'un nombre precis de transitions refusees ait ete journalise.
+     *
+     * <p>Sert de <b>marqueur de consommation</b>. Un message duplique n'a, par definition,
+     * aucun effet : rien n'indique en base qu'il a ete traite. Affirmer directement
+     * "un seul mouvement a eu lieu" passerait donc a vide si le doublon n'etait pas encore
+     * arrive. Attendre le refus qu'il provoque — ou celui d'un message marqueur envoye
+     * derriere lui sur la meme partition, donc traite apres lui — prouve qu'il a ete vu.
+     *
+     * <p>Le nombre exact compte : un refus de trop signalerait qu'un doublon a franchi la
+     * deduplication et n'a ete arrete que par la machine a etats.
+     */
+    protected void awaitRejectedTransitions(String transactionId, int expected) {
+        await().atMost(SETTLE_TIMEOUT)
+                .pollInterval(Duration.ofMillis(100))
+                .untilAsserted(() -> org.assertj.core.api.Assertions
+                        .assertThat(rejectedTransitions(transactionId))
+                        .as("%s", diagnostics(transactionId))
+                        .hasSize(expected));
+    }
+
     protected String statusOf(String transactionId) {
         return jdbc.sql("SELECT status FROM payment.payment_transaction WHERE id = :id")
                 .param("id", UUID.fromString(transactionId))

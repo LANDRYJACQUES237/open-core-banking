@@ -84,13 +84,16 @@ class CollectionFlowIT extends PaymentKafkaTestBase {
                 "4100|CR|100");
         assertBalanced(body, "10000");
 
+        // Les trois evenements existent des que le statut est COMPLETED : chacun a ete
+        // ecrit dans la meme transaction que le changement d'etat qui l'a produit.
         assertThat(outboxEventTypes(transactionId)).containsExactly(
                 "provider.collection.execute",
                 "payment.collection.requested",
                 "payment.collection.completed");
-        assertThat(unpublishedOutboxCount(transactionId))
-                .as("le relais a publie tous les evenements")
-                .isZero();
+
+        // Leur PUBLICATION, elle, arrive apres : le relais est asynchrone, c'est tout
+        // l'interet de l'outbox. Il faut donc l'attendre au lieu de l'affirmer.
+        awaitOutboxDrained(transactionId);
 
         assertThat(ledgerEntryRefOf(transactionId)).isNotBlank();
     }
@@ -159,7 +162,21 @@ class CollectionFlowIT extends PaymentKafkaTestBase {
         String transactionId = requestCollection("10096");
         awaitStatus(transactionId, "COMPLETED");
 
-        // L'assertion centrale : l'argent n'a bouge qu'une fois.
+        // On attend d'abord la trace du refus, et ce n'est pas un detail d'ordonnancement.
+        //
+        // Le second succes porte un eventId different : il franchit la deduplication et
+        // n'est arrete que par la machine a etats, qui journalise son refus. Asserter
+        // immediatement "un seul mouvement" passerait a vide si ce second message n'etait
+        // pas encore arrive — le test serait vert sans rien avoir verifie.
+        //
+        // Exactement un refus, pas "au moins un" : le premier succes est accepte, le
+        // second refuse. Un refus supplementaire signalerait un comportement inattendu.
+        awaitRejectedTransitions(transactionId, 1);
+
+        assertThat(rejectedTransitions(transactionId).getFirst())
+                .containsAnyOf("TERMINAL_STATE", "ALREADY_IN_TARGET_STATE", "ILLEGAL_TRANSITION");
+
+        // L'assertion centrale, desormais adossee a la preuve que le doublon a ete vu.
         assertThat(ledgerCallsFor(transactionId))
                 .as("un doublon logique ne doit pas produire une seconde ecriture")
                 .isEqualTo(1);
@@ -168,13 +185,6 @@ class CollectionFlowIT extends PaymentKafkaTestBase {
                 .filteredOn("payment.collection.completed"::equals)
                 .as("un seul evenement de fin")
                 .hasSize(1);
-
-        // La preuve que le doublon a bien ete vu et refuse est en base, pas dans un log.
-        assertThat(rejectedTransitions(transactionId))
-                .as("le second succes doit apparaitre comme une transition refusee")
-                .isNotEmpty()
-                .anySatisfy(step -> assertThat(step)
-                        .containsAnyOf("TERMINAL_STATE", "ALREADY_IN_TARGET_STATE", "ILLEGAL_TRANSITION"));
     }
 
     // -----------------------------------------------------------------------------
@@ -259,8 +269,52 @@ class CollectionFlowIT extends PaymentKafkaTestBase {
         String transactionId = requestCollection("10097");
         awaitStatus(transactionId, "PROVIDER_ACCEPTED");
 
-        String eventId = UUID.randomUUID().toString();
-        String raw = EventJson.mapper().writeValueAsString(new EventEnvelope(
+        String duplicatedEventId = UUID.randomUUID().toString();
+        String duplicated = succeededEnvelope(duplicatedEventId, transactionId, "REF-REPLAY");
+
+        // Meme cle de partition : les copies arrivent dans l'ordre, sur la meme partition,
+        // exactement comme le ferait une redelivrance.
+        kafka.send(Topics.EVT_PROVIDER, transactionId, duplicated);
+        kafka.send(Topics.EVT_PROVIDER, transactionId, duplicated);
+
+        // Message marqueur, envoye derriere les deux copies avec un eventId DIFFERENT.
+        //
+        // Il resout le probleme propre a ce scenario : un doublon technique correctement
+        // arrete ne laisse aucune trace, donc rien ne permet de savoir s'il a ete traite
+        // ou s'il n'est pas encore arrive. Sans repere, l'assertion "un seul mouvement"
+        // passerait a vide.
+        //
+        // Le marqueur, lui, franchit la deduplication et se fait refuser par la machine a
+        // etats, ce qui laisse une trace. Comme il partage la cle de partition des deux
+        // copies, il est necessairement traite APRES elles : voir son refus prouve
+        // qu'elles ont ete consommees.
+        kafka.send(Topics.EVT_PROVIDER, transactionId,
+                succeededEnvelope(UUID.randomUUID().toString(), transactionId, "REF-MARQUEUR"));
+
+        awaitStatus(transactionId, "COMPLETED");
+
+        // Exactement un refus : celui du marqueur. Si la deduplication avait laisse passer
+        // la seconde copie, elle aurait elle aussi ete refusee par la machine a etats et
+        // on en compterait deux. Ce nombre est donc une assertion sur la deduplication
+        // elle-meme, pas seulement un point de synchronisation.
+        awaitRejectedTransitions(transactionId, 1);
+
+        assertThat(ledgerCallsFor(transactionId))
+                .as("le message rejoue ne doit produire aucun second mouvement")
+                .isEqualTo(1);
+
+        assertThat(processedMessageCount(duplicatedEventId))
+                .as("une seule trace de traitement pour cet eventId")
+                .isEqualTo(1);
+
+        assertThat(outboxEventTypes(transactionId))
+                .filteredOn("payment.collection.completed"::equals)
+                .hasSize(1);
+    }
+
+    private String succeededEnvelope(String eventId, String transactionId, String providerRef)
+            throws Exception {
+        return EventJson.mapper().writeValueAsString(new EventEnvelope(
                 eventId,
                 EventTypes.PROVIDER_OPERATION_SUCCEEDED,
                 1,
@@ -271,27 +325,8 @@ class CollectionFlowIT extends PaymentKafkaTestBase {
                 null,
                 "test-harness",
                 new Payloads.ProviderOperationSucceeded(
-                        transactionId, "MTN_MOMO", "REF-REPLAY", "150", "XAF",
+                        transactionId, "MTN_MOMO", providerRef, "150", "XAF",
                         Instant.now(), "POLL")));
-
-        // Meme cle de partition : les deux copies arrivent dans l'ordre, sur la meme
-        // partition, exactement comme le ferait une redelivrance.
-        kafka.send(Topics.EVT_PROVIDER, transactionId, raw);
-        kafka.send(Topics.EVT_PROVIDER, transactionId, raw);
-
-        awaitStatus(transactionId, "COMPLETED");
-
-        assertThat(ledgerCallsFor(transactionId))
-                .as("le message rejoue ne doit produire aucun second mouvement")
-                .isEqualTo(1);
-
-        assertThat(processedMessageCount(eventId))
-                .as("une seule trace de traitement pour cet eventId")
-                .isEqualTo(1);
-
-        assertThat(outboxEventTypes(transactionId))
-                .filteredOn("payment.collection.completed"::equals)
-                .hasSize(1);
     }
 
     // -----------------------------------------------------------------------------
