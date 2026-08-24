@@ -39,6 +39,16 @@
             <groupId>com.ocb</groupId>
             <artifactId>common-outbox</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.ocb</groupId>
+            <artifactId>common-security</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.ocb</groupId>
+            <artifactId>common-security</artifactId>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
 
         <dependency>
             <groupId>org.springframework.boot</groupId>

@@ -39,6 +39,12 @@ spring:
   jackson:
     default-property-inclusion: non_null
 
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${OIDC_ISSUER_URI:http://localhost:8090/realms/ocb}
+
 server:
   port: ${PROVIDER_PORT:8083}
   error:
@@ -46,6 +52,10 @@ server:
     include-stacktrace: never
 
 ocb:
+  security:
+    audiences:
+      - provider-service
+
   kafka:
     groups:
       provider-commands: provider-service.commands

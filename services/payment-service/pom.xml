@@ -38,6 +38,24 @@
             <groupId>com.ocb</groupId>
             <artifactId>common-outbox</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.ocb</groupId>
+            <artifactId>common-security</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.ocb</groupId>
+            <artifactId>common-security</artifactId>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+        <!--
+          Cote client : ce service ne fait pas que verifier des jetons, il en obtient un
+          pour appeler le grand livre en tant que lui-meme.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-client</artifactId>
+        </dependency>
 
         <dependency>
             <groupId>org.springframework.boot</groupId>

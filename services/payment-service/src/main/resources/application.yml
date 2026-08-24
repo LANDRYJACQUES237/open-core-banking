@@ -45,6 +45,26 @@ spring:
   jackson:
     default-property-inclusion: non_null
 
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${OIDC_ISSUER_URI:http://localhost:8090/realms/ocb}
+      client:
+        registration:
+          ledger:
+            # Ce service s'authentifie en tant que lui-meme, pas au nom de l'appelant.
+            # L'ecriture comptable est sa decision, prise apres validation ; propager le
+            # jeton du marchand reviendrait a lui accorder indirectement ledger:post.
+            provider: ocb
+            client-id: ${LEDGER_CLIENT_ID:payment-service}
+            client-secret: ${LEDGER_CLIENT_SECRET:}
+            authorization-grant-type: client_credentials
+            scope: ledger:post,ledger:read
+        provider:
+          ocb:
+            token-uri: ${OIDC_TOKEN_URI:http://localhost:8090/realms/ocb/protocol/openid-connect/token}
+
 server:
   port: ${PAYMENT_PORT:8082}
   error:
@@ -52,6 +72,10 @@ server:
     include-stacktrace: never
 
 ocb:
+  security:
+    audiences:
+      - payment-service
+
   kafka:
     groups:
       # Externalises plutot que figes dans les annotations : un groupe en dur empeche de

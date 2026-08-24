@@ -36,6 +36,8 @@ import java.util.UUID;
  */
 @SpringBootTest
 @AutoConfigureMockMvc
+@org.springframework.context.annotation.Import(
+        com.ocb.platform.security.test.TestSecurityConfiguration.class)
 public abstract class PaymentPersistenceTestBase {
 
     protected static final String OWNER_USER = "payment_owner";
@@ -82,6 +84,13 @@ public abstract class PaymentPersistenceTestBase {
         // dure trente secondes par contexte et laisse une pile d'erreurs dans les
         // journaux, ce qui masque les vraies causes d'echec.
         registry.add("spring.kafka.admin.auto-create", () -> "false");
+        // Le grand livre n'est jamais appele ici, donc aucun jeton de service n'est
+        // demande. Le secret est neanmoins renseigne pour que la configuration du client
+        // soit complete au demarrage.
+        registry.add("spring.security.oauth2.client.registration.ledger.client-secret",
+                () -> "secret-de-test");
+        registry.add("spring.security.oauth2.client.provider.ocb.token-uri",
+                () -> "http://auth.invalid/token");
     }
 
     @Autowired
@@ -93,6 +102,9 @@ public abstract class PaymentPersistenceTestBase {
     @Autowired
     protected JdbcClient jdbc;
 
+    @Autowired
+    protected com.ocb.platform.security.test.TestJwtIssuer jwtIssuer;
+
     protected String suffix;
 
     @BeforeEach
@@ -102,7 +114,18 @@ public abstract class PaymentPersistenceTestBase {
 
     // --- Appels HTTP ------------------------------------------------------------------
 
+    /** Jeton par defaut : les deux portees du moteur de paiement. */
+    protected String defaultToken() {
+        return jwtIssuer.token("marchand", "payment-service",
+                com.ocb.platform.security.OcbScopes.PAYMENT_INITIATE,
+                com.ocb.platform.security.OcbScopes.PAYMENT_READ);
+    }
+
     protected ApiResponse post(String path, String idempotencyKey, String body) {
+        return post(path, idempotencyKey, body, defaultToken());
+    }
+
+    protected ApiResponse post(String path, String idempotencyKey, String body, String token) {
         MockHttpServletRequestBuilder request =
                 MockMvcRequestBuilders.request(HttpMethod.POST, URI.create(path))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -110,11 +133,23 @@ public abstract class PaymentPersistenceTestBase {
         if (idempotencyKey != null) {
             request.header("Idempotency-Key", idempotencyKey);
         }
+        if (token != null) {
+            request.header("Authorization", "Bearer " + token);
+        }
         return execute(request);
     }
 
     protected ApiResponse get(String path) {
-        return execute(MockMvcRequestBuilders.request(HttpMethod.GET, URI.create(path)));
+        return get(path, defaultToken());
+    }
+
+    protected ApiResponse get(String path, String token) {
+        MockHttpServletRequestBuilder request =
+                MockMvcRequestBuilders.request(HttpMethod.GET, URI.create(path));
+        if (token != null) {
+            request.header("Authorization", "Bearer " + token);
+        }
+        return execute(request);
     }
 
     private ApiResponse execute(MockHttpServletRequestBuilder request) {

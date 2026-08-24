@@ -49,13 +49,22 @@ public class LedgerRestClient implements LedgerPort {
     private final String baseUrl;
 
     public LedgerRestClient(RestTemplateBuilder builder,
+                            org.springframework.security.oauth2.client.OAuth2AuthorizedClientManager
+                                    authorizedClientManager,
                             @Value("${ocb.ledger.base-url}") String baseUrl,
+                            @Value("${ocb.ledger.registration-id:ledger}") String registrationId,
                             @Value("${ocb.ledger.connect-timeout:PT2S}") Duration connectTimeout,
                             @Value("${ocb.ledger.read-timeout:PT10S}") Duration readTimeout) {
         this.baseUrl = baseUrl;
         this.restTemplate = builder
                 .connectTimeout(connectTimeout)
                 .readTimeout(readTimeout)
+                // Le jeton de service est attache par un intercepteur plutot qu'a chaque
+                // appel : un en-tete pose a la main finit toujours par etre oublie sur un
+                // nouveau point d'appel, et l'oubli se manifeste par un 401 que le client
+                // traduirait en refus du grand livre.
+                .additionalInterceptors(new ClientCredentialsInterceptor(
+                        authorizedClientManager, registrationId, "payment-service"))
                 .build();
     }
 

@@ -53,6 +53,8 @@ import static org.awaitility.Awaitility.await;
  */
 @SpringBootTest
 @AutoConfigureMockMvc
+@org.springframework.context.annotation.Import(
+        com.ocb.platform.security.test.TestSecurityConfiguration.class)
 public abstract class PaymentKafkaTestBase {
 
     protected static final String OWNER_USER = "payment_owner";
@@ -122,7 +124,13 @@ public abstract class PaymentKafkaTestBase {
         // restent breves. Piloter le relais a la main donnerait plus de controle mais
         // testerait moins.
         registry.add("ocb.outbox.poll-interval", () -> "PT0.25S");
-        registry.add("ocb.provider.simulator.enabled", () -> "true");
+
+        // Le point de terminaison de jetons est joue par le meme WireMock que le grand
+        // livre : le flux client_credentials est donc reellement exerce, pas court-circuite.
+        registry.add("spring.security.oauth2.client.registration.ledger.client-secret",
+                () -> "secret-de-test");
+        registry.add("spring.security.oauth2.client.provider.ocb.token-uri",
+                () -> LEDGER.baseUrl() + "/oauth2/token");
     }
 
     @Autowired
@@ -137,6 +145,9 @@ public abstract class PaymentKafkaTestBase {
     @Autowired
     protected KafkaTemplate<String, String> kafka;
 
+    @Autowired
+    protected com.ocb.platform.security.test.TestJwtIssuer jwtIssuer;
+
     protected String suffix;
 
     @BeforeEach
@@ -144,7 +155,23 @@ public abstract class PaymentKafkaTestBase {
         // Remet a zero les bouchons ET le journal des requetes : chaque test compte les
         // appels au grand livre pour lui-meme.
         LEDGER.resetAll();
+        stubTokenEndpoint();
         suffix = UUID.randomUUID().toString().substring(0, 8);
+    }
+
+    /**
+     * Point de terminaison de jetons, joue par le meme serveur que le grand livre.
+     *
+     * <p>Le flux client_credentials est ainsi reellement traverse : si l'intercepteur
+     * cessait d'attacher le jeton, ou si la configuration du client etait fausse, aucun
+     * appel n'atteindrait le grand livre et les tests de flux echoueraient.
+     */
+    protected void stubTokenEndpoint() {
+        LEDGER.stubFor(WireMock.post(urlEqualTo("/oauth2/token")).willReturn(aResponse()
+                .withStatus(200)
+                .withHeader("Content-Type", "application/json")
+                .withBody("{\"access_token\":\"jeton-de-service\",\"token_type\":\"Bearer\","
+                        + "\"expires_in\":3600}")));
     }
 
     // --- Bouchons du grand livre ------------------------------------------------------
@@ -337,11 +364,18 @@ public abstract class PaymentKafkaTestBase {
 
     // --- Appels HTTP ------------------------------------------------------------------
 
+    protected String defaultToken() {
+        return jwtIssuer.token("marchand", "payment-service",
+                com.ocb.platform.security.OcbScopes.PAYMENT_INITIATE,
+                com.ocb.platform.security.OcbScopes.PAYMENT_READ);
+    }
+
     protected ApiResponse post(String path, String idempotencyKey, String body) {
         MockHttpServletRequestBuilder request =
                 MockMvcRequestBuilders.request(HttpMethod.POST, URI.create(path))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(body);
+                        .content(body)
+                        .header("Authorization", "Bearer " + defaultToken());
         if (idempotencyKey != null) {
             request.header("Idempotency-Key", idempotencyKey);
         }
@@ -349,7 +383,8 @@ public abstract class PaymentKafkaTestBase {
     }
 
     protected ApiResponse get(String path) {
-        return execute(MockMvcRequestBuilders.request(HttpMethod.GET, URI.create(path)));
+        return execute(MockMvcRequestBuilders.request(HttpMethod.GET, URI.create(path))
+                .header("Authorization", "Bearer " + defaultToken()));
     }
 
     private ApiResponse execute(MockHttpServletRequestBuilder request) {

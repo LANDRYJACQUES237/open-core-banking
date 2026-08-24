@@ -35,6 +35,8 @@ import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.options
  * C'est le seul reglage ajuste : le reste du comportement est celui de production.
  */
 @SpringBootTest
+@org.springframework.context.annotation.Import(
+        com.ocb.platform.security.test.TestSecurityConfiguration.class)
 public abstract class ProviderOperatorTestBase {
 
     protected static final PostgreSQLContainer<?> POSTGRES =

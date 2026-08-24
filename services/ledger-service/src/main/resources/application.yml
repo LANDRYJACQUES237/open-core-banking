@@ -31,11 +31,28 @@ spring:
   jackson:
     default-property-inclusion: non_null
 
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Validation locale via JWKS : chaque service verifie le jeton lui-meme, sans
+          # appeler le fournisseur d'identite a chaque requete. Pas de point de
+          # defaillance unique sur le chemin de l'argent.
+          issuer-uri: ${OIDC_ISSUER_URI:http://localhost:8090/realms/ocb}
+
 server:
   port: ${LEDGER_PORT:8081}
   error:
     include-message: never
     include-stacktrace: never
+
+ocb:
+  security:
+    # Un jeton doit dire pour quel destinataire il a ete emis. Sans cette verification,
+    # un jeton legitime destine a un autre service serait accepte ici avec toutes ses
+    # portees.
+    audiences:
+      - ledger-service
 
 ledger:
   maintenance:

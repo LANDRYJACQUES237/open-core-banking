@@ -42,6 +42,8 @@ import java.util.UUID;
  */
 @SpringBootTest
 @AutoConfigureMockMvc
+@org.springframework.context.annotation.Import(
+        com.ocb.platform.security.test.TestSecurityConfiguration.class)
 public abstract class ProviderPersistenceTestBase {
 
     protected static final String OWNER_USER = "provider_owner";
@@ -95,6 +97,9 @@ public abstract class ProviderPersistenceTestBase {
     @Autowired
     protected OperationStore operations;
 
+    @Autowired
+    protected com.ocb.platform.security.test.TestJwtIssuer jwtIssuer;
+
     protected String suffix;
 
     @BeforeEach
@@ -141,8 +146,23 @@ public abstract class ProviderPersistenceTestBase {
         return execute(request);
     }
 
+    /** Jeton de diagnostic : la seule portee que ce service reconnait. */
+    protected String defaultToken() {
+        return jwtIssuer.token("console", "provider-service",
+                com.ocb.platform.security.OcbScopes.PROVIDER_READ);
+    }
+
     protected ApiResponse get(String path) {
-        return execute(MockMvcRequestBuilders.request(HttpMethod.GET, URI.create(path)));
+        return get(path, defaultToken());
+    }
+
+    protected ApiResponse get(String path, String token) {
+        MockHttpServletRequestBuilder request =
+                MockMvcRequestBuilders.request(HttpMethod.GET, URI.create(path));
+        if (token != null) {
+            request.header("Authorization", "Bearer " + token);
+        }
+        return execute(request);
     }
 
     private ApiResponse execute(MockHttpServletRequestBuilder request) {

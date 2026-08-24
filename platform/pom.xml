@@ -23,5 +23,6 @@
         <module>common-web</module>
         <module>common-events</module>
         <module>common-outbox</module>
+        <module>common-security</module>
     </modules>
 </project>

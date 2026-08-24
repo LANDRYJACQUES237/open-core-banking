@@ -2,6 +2,7 @@ package com.ocb.ledger;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ocb.platform.security.OcbScopes;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -44,6 +45,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @SpringBootTest
 @AutoConfigureMockMvc
+@org.springframework.context.annotation.Import(
+        com.ocb.platform.security.test.TestSecurityConfiguration.class)
 public abstract class LedgerIntegrationTestBase {
 
     protected static final String OWNER_USER = "ledger_owner";
@@ -86,6 +89,9 @@ public abstract class LedgerIntegrationTestBase {
     @Autowired
     protected DataSource appDataSource;
 
+    @Autowired
+    protected com.ocb.platform.security.test.TestJwtIssuer jwtIssuer;
+
     protected String suffix;
 
     @BeforeEach
@@ -107,7 +113,24 @@ public abstract class LedgerIntegrationTestBase {
 
     // --- Appels HTTP ------------------------------------------------------------------
 
+    /**
+     * Jeton par defaut des tests fonctionnels : les deux portees du grand livre.
+     *
+     * <p>Les tests de ce socle verifient le comportement metier, pas les regles d'acces.
+     * Celles-ci ont leur propre suite ({@code LedgerSecurityIT}), ou chaque refus est
+     * exerce explicitement — jeton absent, portee manquante, expire, mauvaise audience,
+     * mauvais emetteur, signature etrangere.
+     */
+    protected String defaultToken() {
+        return jwtIssuer.token("payment-service", "ledger-service",
+                OcbScopes.LEDGER_READ, OcbScopes.LEDGER_POST);
+    }
+
     protected ApiResponse post(String path, String idempotencyKey, String body) {
+        return post(path, idempotencyKey, body, defaultToken());
+    }
+
+    protected ApiResponse post(String path, String idempotencyKey, String body, String token) {
         MockHttpServletRequestBuilder request =
                 MockMvcRequestBuilders.request(HttpMethod.POST, URI.create(path))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -115,11 +138,23 @@ public abstract class LedgerIntegrationTestBase {
         if (idempotencyKey != null) {
             request.header("Idempotency-Key", idempotencyKey);
         }
+        if (token != null) {
+            request.header("Authorization", "Bearer " + token);
+        }
         return execute(request);
     }
 
     protected ApiResponse get(String path) {
-        return execute(MockMvcRequestBuilders.request(HttpMethod.GET, URI.create(path)));
+        return get(path, defaultToken());
+    }
+
+    protected ApiResponse get(String path, String token) {
+        MockHttpServletRequestBuilder request =
+                MockMvcRequestBuilders.request(HttpMethod.GET, URI.create(path));
+        if (token != null) {
+            request.header("Authorization", "Bearer " + token);
+        }
+        return execute(request);
     }
 
     private ApiResponse execute(MockHttpServletRequestBuilder request) {
