@@ -72,7 +72,21 @@ public abstract class PaymentKafkaTestBase {
                     .withPassword(OWNER_PASSWORD)
                     .withInitScript("db/testcontainers-init.sql");
 
-    protected static final KafkaContainer KAFKA = new KafkaContainer("apache/kafka:3.9.0");
+    /**
+     * Courtier Kafka en mode KRaft.
+     *
+     * <p><b>La version est epinglee en 3.8, et ce n'est pas un caprice.</b> Testcontainers
+     * demarre le conteneur avec {@code KAFKA_LISTENERS} pointant sur {@code 0.0.0.0} et ne
+     * renseigne les listeners annonces qu'ensuite, via un script, une fois le port publie
+     * connu. L'entrypoint d'{@code apache/kafka:3.9} valide la configuration complete
+     * <i>avant</i> cela, au moment du formatage du stockage, et refuse
+     * {@code 0.0.0.0} comme adresse annoncee : le conteneur sort en erreur avant meme
+     * d'ouvrir un port. La 3.8 ne fait pas cette validation au formatage.
+     *
+     * <p>Le client Kafka reste en 3.9 : un client recent parle sans probleme a un courtier
+     * plus ancien, la negociation de version d'API s'en charge.
+     */
+    protected static final KafkaContainer KAFKA = new KafkaContainer("apache/kafka:3.8.1");
 
     protected static final WireMockServer LEDGER = new WireMockServer(options().dynamicPort());
 

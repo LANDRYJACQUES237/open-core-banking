@@ -73,6 +73,15 @@ public abstract class PaymentPersistenceTestBase {
         registry.add("spring.kafka.listener.auto-startup", () -> "false");
         registry.add("ocb.outbox.enabled", () -> "false");
         registry.add("ocb.provider.simulator.enabled", () -> "false");
+
+        // Desactive la declaration des topics au demarrage.
+        //
+        // Sans cela, KafkaAdmin tente de joindre un courtier des l'initialisation du
+        // contexte pour creer les topics declares par KafkaConfig. Aucun courtier ne
+        // tourne ici — et c'est normal, ces tests n'en ont pas besoin — mais l'attente
+        // dure trente secondes par contexte et laisse une pile d'erreurs dans les
+        // journaux, ce qui masque les vraies causes d'echec.
+        registry.add("spring.kafka.admin.auto-create", () -> "false");
     }
 
     @Autowired
