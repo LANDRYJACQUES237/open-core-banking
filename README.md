@@ -1,6 +1,6 @@
 # Open Core Banking
 
-[![build](https://github.com/JacquesLandryNgandjo/open-core-banking/actions/workflows/build.yml/badge.svg)](https://github.com/JacquesLandryNgandjo/open-core-banking/actions/workflows/build.yml)
+[![build](https://github.com/LANDRYJACQUES237/open-core-banking/actions/workflows/build.yml/badge.svg)](https://github.com/LANDRYJACQUES237/open-core-banking/actions/workflows/build.yml)
 
 Plateforme de paiement en microservices, avec integration Mobile Money (MTN MoMo,
 Orange Money — zone CEMAC). Grand livre en partie double immuable, architecture
@@ -27,8 +27,10 @@ Les proprietes suivantes sont implementees **et testees**, pas seulement mention
 | Idempotence stricte, sure sous concurrence | Livre | `ledger-service` |
 | Contre-passation unique, base de la compensation de saga | Livre | `ledger-service` |
 | Journal d'audit append-only avec chainage de hachage | Livre | `ledger-service` |
-| Transactional Outbox | Phase 2 | `payment-service` |
-| Machine a etats a transitions gardees | Phase 2 | `payment-service` |
+| Transactional Outbox | Livre | `payment-service` |
+| Machine a etats a transitions gardees | Livre | `payment-service` |
+| Contrat d'evenements opposable, valide en CI | Livre | `contracts/events` |
+| Donnee personnelle non conservee plutot que chiffree | Livre | `payment-service` |
 | Consommateurs Kafka idempotents | Phase 4 | `notification-service` |
 | Saga avec compensation | Phase 4 | decaissement |
 | Timeout traite comme "inconnu", jamais comme echec | Phase 3 | `provider-service` |
@@ -78,7 +80,7 @@ Deux points de decoupage meritent d'etre lus avant le code :
 |---|---|---|
 | 0 | Cadrage, decoupage, contrats d'evenements | Termine |
 | 1 | `ledger-service` : comptes, partie double, soldes, API REST | Termine |
-| 2 | `payment-service` : idempotence, machine a etats, outbox, Kafka | En cours |
+| 2 | `payment-service` : idempotence, machine a etats, outbox, Kafka | Livre — reste le test de flux complet, a valider en CI |
 | 3 | `provider-service` : abstraction operateur, webhooks, polling, **securite OIDC** | A venir |
 | 4 | `notification-service` et saga de decaissement avec compensation | A venir |
 | 5 | Docker Compose, Helm, sondes, observabilite | A venir |
@@ -116,7 +118,12 @@ Les tests unitaires ne demandent aucune infrastructure : domaine comptable, type
 Ajoute les tests d'integration, qui demandent un daemon Docker (Testcontainers lance un
 PostgreSQL reel — la contrainte differee et les droits n'ont aucun sens sans lui).
 
-Pour lancer un service, voir son README : [ledger-service](services/ledger-service/README.md).
+Pour lancer un service, voir son README :
+[ledger-service](services/ledger-service/README.md) ·
+[payment-service](services/payment-service/README.md).
+
+Le contrat des evenements Kafka et ses regles de compatibilite sont dans
+[contracts/events](contracts/events/README.md).
 
 ---
 
