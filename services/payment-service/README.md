@@ -188,6 +188,35 @@ L'idempotence sous concurrence et l'atomicite de l'outbox sont des proprietes de
 **base** : les verifier a travers un bus ajouterait de l'asynchronisme, donc des attentes
 et de l'intermittence, sans rien prouver de plus.
 
+### Le flux complet
+
+`CollectionFlowIT` traverse reellement la chaine — outbox, relais, Kafka, operateur
+simule, grand livre bouchonne — et couvre six scenarios :
+
+| # | Scenario | Ce qu'il demontre |
+|---|---|---|
+| S1 | Encaissement nominal | Sequence d'etats **exacte**, ecriture equilibree a quatre lignes, un seul appel au grand livre |
+| S2 | Refus operateur | Echec, et surtout **zero ecriture** : un encaissement refuse n'a rien engage |
+| S3 | Doublon **logique** | Deux succes aux `eventId` differents, une seule ecriture. Seule la machine a etats peut l'arreter |
+| S4 | Silence de l'operateur | La transaction attend, elle n'echoue **jamais** |
+| S5 | Doublon **technique** | Meme `eventId` rejoue, un seul effet. Seule la deduplication l'arrete |
+| S6 | Grand livre injoignable | Retentative, aucune conclusion hative, une seule ecriture malgre plusieurs appels |
+
+Deux points de methode y sont expliques en commentaire plutot que seulement appliques.
+
+**La sequence d'etats de S1 est asserte exactement**, et non par presence des etapes. Cela
+verifie la garantie d'ordre par cle de partition : si la confirmation arrivait avant
+l'accuse de reception, la machine a etats refuserait la transition et la sequence ne
+correspondrait plus.
+
+**La transaction-barriere de S4** repond au cas le plus difficile d'un test asynchrone :
+prouver qu'il ne se passe rien. Aucune attente ne le demontre, puisqu'on aura toujours pu
+attendre trop peu. Le raisonnement tient sur deux jambes — avoir observe `PROVIDER_ACCEPTED`
+prouve que l'operateur simule a **termine** de traiter la commande, et une seconde
+transaction menee jusqu'a `COMPLETED` prouve que la chaine a ete **drainee** au-dela. On
+n'affirme pas « rien n'est arrive parce qu'on a attendu », mais « rien ne peut arriver, et
+le tuyau est vide ».
+
 ---
 
 ## Exemple : un encaissement
@@ -264,6 +293,4 @@ Le cas `97` est le plus instructif : la transaction reste en attente et ne bascu
 - **L'appel au grand livre se fait sous verrou.** La transaction locale tient le verrou de
   ligne pendant l'appel HTTP. Acceptable a cette echelle, avec un delai de lecture court
   volontairement ; a surveiller si la latence du grand livre augmente.
-- **Le test de flux complet n'existe pas encore.** Il sera ecrit et valide en CI, ou Kafka
-  peut reellement demarrer.
 - **Pas de decaissement, pas de saga.** Phase 4.

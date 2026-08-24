@@ -11,6 +11,7 @@ import com.ocb.platform.web.CorrelationIdFilter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,19 +40,32 @@ import org.springframework.transaction.annotation.Transactional;
 public class ProviderEventConsumer {
 
     private static final Logger log = LoggerFactory.getLogger(ProviderEventConsumer.class);
-    public static final String GROUP = "payment-service.provider-events";
 
     private final ProviderOutcomeService outcomes;
     private final ProcessedMessageStore processed;
     private final ObjectMapper mapper = EventJson.mapper();
 
-    public ProviderEventConsumer(ProviderOutcomeService outcomes, ProcessedMessageStore processed) {
+    /**
+     * Groupe de consommation, resolu depuis la meme propriete que l'annotation.
+     *
+     * <p>Il sert de portee a la deduplication : deux groupes distincts doivent pouvoir
+     * consommer le meme message chacun de leur cote. Une valeur figee en dur empecherait
+     * de faire tourner deux instances logiques du service, et ferait diverger la portee de
+     * deduplication du groupe reellement utilise si l'une des deux etait modifiee.
+     */
+    private final String consumerGroup;
+
+    public ProviderEventConsumer(ProviderOutcomeService outcomes,
+                                 ProcessedMessageStore processed,
+                                 @Value("${ocb.kafka.groups.provider-events}") String consumerGroup) {
         this.outcomes = outcomes;
         this.processed = processed;
+        this.consumerGroup = consumerGroup;
     }
 
     @KafkaListener(topics = "#{T(com.ocb.platform.events.Topics).EVT_PROVIDER}",
-            groupId = GROUP, containerFactory = "paymentKafkaListenerContainerFactory")
+            groupId = "${ocb.kafka.groups.provider-events}",
+            containerFactory = "paymentKafkaListenerContainerFactory")
     @Transactional
     public void onProviderEvent(String rawMessage) {
         ReceivedEvent event = read(rawMessage);
@@ -64,7 +78,7 @@ public class ProviderEventConsumer {
             MDC.put(CorrelationIdFilter.MDC_KEY, correlationId);
         }
         try {
-            if (!processed.markProcessed(GROUP, event.eventId(), event.eventType())) {
+            if (!processed.markProcessed(consumerGroup, event.eventId(), event.eventType())) {
                 log.debug("Message {} deja traite, acquitte sans effet", event.eventId());
                 return;
             }

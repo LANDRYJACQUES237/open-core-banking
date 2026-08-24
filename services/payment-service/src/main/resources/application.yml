@@ -52,6 +52,14 @@ server:
     include-stacktrace: never
 
 ocb:
+  kafka:
+    groups:
+      # Externalises plutot que figes dans les annotations : un groupe en dur empeche de
+      # faire tourner deux instances logiques du service, et interdit d'isoler proprement
+      # des suites de tests qui partagent un meme courtier.
+      provider-events: payment-service.provider-events
+      provider-simulator: provider-simulator
+
   ledger:
     base-url: ${LEDGER_BASE_URL:http://localhost:8081}
     connect-timeout: PT2S

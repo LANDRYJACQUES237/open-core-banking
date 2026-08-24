@@ -48,7 +48,6 @@ import java.time.Instant;
 public class SimulatedProviderConsumer {
 
     private static final Logger log = LoggerFactory.getLogger(SimulatedProviderConsumer.class);
-    private static final String GROUP = "provider-simulator";
     private static final String PRODUCER = "provider-simulator";
 
     private final KafkaTemplate<String, String> kafka;
@@ -59,7 +58,8 @@ public class SimulatedProviderConsumer {
     }
 
     @KafkaListener(topics = "#{T(com.ocb.platform.events.Topics).CMD_PROVIDER}",
-            groupId = GROUP, containerFactory = "paymentKafkaListenerContainerFactory")
+            groupId = "${ocb.kafka.groups.provider-simulator}",
+            containerFactory = "paymentKafkaListenerContainerFactory")
     public void onCommand(String rawMessage) throws Exception {
         ReceivedEvent event = mapper.readValue(rawMessage, ReceivedEvent.class);
         if (!EventTypes.PROVIDER_COLLECTION_EXECUTE.equals(event.eventType())) {
