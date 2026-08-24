@@ -200,15 +200,42 @@ code appelant plutot qu'a un humain.
 
 ---
 
-## Limites assumees en Phase 1
+## Qui peut ecrire dans le grand livre
+
+Le service est un serveur de ressources OIDC. Les jetons sont valides localement contre le
+JWKS du fournisseur : aucun appel reseau au fournisseur d'identite sur le chemin de
+l'argent, donc pas de point de defaillance unique sur une operation comptable.
+
+| Portee | Ce qu'elle ouvre |
+|---|---|
+| `ledger:post` | Passer une ecriture, ouvrir un compte |
+| `ledger:read` | Consulter comptes, ecritures et releves |
+
+**`ledger:post` n'est accordee qu'au compte de service de `payment-service`.** Aucun
+marchand ne la detient, et c'est la decision de securite la plus importante du service : un
+appelant capable de passer ses propres ecritures contournerait la machine a etats,
+l'idempotence et le calcul des frais — et pourrait se crediter lui-meme.
+
+L'**audience** est verifiee en plus de la signature. Sans cela, la securite se resumerait a
+« la signature est bonne » : un jeton legitimement emis pour une console d'administration
+passerait ici avec toutes ses portees.
+
+Seules les sondes `/actuator/health/liveness` et `/readiness` sont ouvertes — Kubernetes ne
+presente pas de jeton. Le reste de l'actuator ne l'est pas : le volume et le montant des
+ecritures se lisent dans les metriques. Tout le reste est en `denyAll` par defaut, de sorte
+qu'un point d'entree ajoute plus tard soit ferme tant que personne ne l'a ouvert
+explicitement.
+
+Quatorze tests d'integration couvrent ces regles, y compris les cas ou seul un element du
+jeton est faux : signature etrangere, emetteur inattendu, audience d'un autre service,
+jeton expire, et portee de lecture tentant d'ecrire.
+
+---
+
+## Limites assumees
 
 Elles sont listees ici plutot que decouvertes plus tard.
 
-- **Aucune authentification pour l'instant.** Le service est ouvert. La couche resource
-  server OIDC (Keycloak, portees `ledger:read` et `ledger:post`) est cablee en **Phase 3**,
-  au moment ou `provider-service` introduit des secrets operateurs et une exposition
-  publique. Elle n'est pas repoussee en fin de projet : une securite ajoutee a la fin se
-  voit, et c'est exactement ce qu'il ne faut pas montrer.
 - **Pagination du releve par decalage.** Le solde progressif est calcule par fonction de
   fenetrage sur tout l'historique du compte, puis la page est decoupee : chaque page relit
   l'historique complet. A l'echelle, il faudra partir de l'instantane et paginer par cle.

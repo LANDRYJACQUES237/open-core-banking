@@ -33,9 +33,9 @@ Les proprietes suivantes sont implementees **et testees**, pas seulement mention
 | Donnee personnelle non conservee plutot que chiffree | Livre | `payment-service` |
 | Consommateurs Kafka idempotents | Livre | `payment-service` |
 | Saga avec compensation | Phase 4 | decaissement |
-| Timeout traite comme "inconnu", jamais comme echec | Phase 3 | `provider-service` |
-| Callbacks signes **et** polling de reconciliation | Phase 3 | `provider-service` |
-| OIDC resource server, portees fines, secrets hors depot | Phase 3 | tous |
+| Timeout traite comme "inconnu", jamais comme echec | Livre | `provider-service` |
+| Callbacks signes **et** polling de reconciliation | Livre | `provider-service` |
+| OIDC resource server, portees fines, secrets hors depot | Livre | tous |
 
 ---
 
@@ -81,7 +81,7 @@ Deux points de decoupage meritent d'etre lus avant le code :
 | 0 | Cadrage, decoupage, contrats d'evenements | Termine |
 | 1 | `ledger-service` : comptes, partie double, soldes, API REST | Termine |
 | 2 | `payment-service` : idempotence, machine a etats, outbox, Kafka | Termine |
-| 3 | `provider-service` : abstraction operateur, webhooks, polling, **securite OIDC** | A venir |
+| 3 | `provider-service` : abstraction operateur, webhooks, polling, **securite OIDC** | Termine |
 | 4 | `notification-service` et saga de decaissement avec compensation | A venir |
 | 5 | Docker Compose, Helm, sondes, observabilite | A venir |
 | 6 | Documentation, diagrammes, guide de demarrage | A venir |
@@ -120,7 +120,8 @@ PostgreSQL reel — la contrainte differee et les droits n'ont aucun sens sans l
 
 Pour lancer un service, voir son README :
 [ledger-service](services/ledger-service/README.md) ·
-[payment-service](services/payment-service/README.md).
+[payment-service](services/payment-service/README.md) ·
+[provider-service](services/provider-service/README.md).
 
 Le contrat des evenements Kafka et ses regles de compatibilite sont dans
 [contracts/events](contracts/events/README.md).

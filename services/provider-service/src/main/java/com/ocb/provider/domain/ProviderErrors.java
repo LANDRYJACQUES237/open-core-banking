@@ -10,5 +10,4 @@ public final class ProviderErrors {
     public static final String INVALID_SIGNATURE = "PROVIDER_INVALID_SIGNATURE";
     public static final String SIGNATURE_EXPIRED = "PROVIDER_SIGNATURE_EXPIRED";
     public static final String UNKNOWN_PROVIDER = "PROVIDER_UNKNOWN";
-    public static final String MALFORMED_CALLBACK = "PROVIDER_MALFORMED_CALLBACK";
 }

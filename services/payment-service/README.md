@@ -154,8 +154,9 @@ docker run -d --name ocb-payment-db -e POSTGRES_USER=payment_owner -e POSTGRES_P
 docker exec ocb-payment-db psql -U payment_owner -d payment -c "CREATE ROLE payment_app LOGIN PASSWORD 'app-secret';"
 ```
 
-Kafka est necessaire pour le flux complet. En Phase 5, un Docker Compose remplacera ces
-commandes.
+Kafka est necessaire pour le flux complet, et un fournisseur OIDC pour obtenir un jeton. En
+Phase 5, un Docker Compose remplacera ces commandes et fournira un realm Keycloak
+pre-configure.
 
 ---
 
@@ -280,12 +281,44 @@ Le cas `97` est le plus instructif : la transaction reste en attente et ne bascu
 
 ---
 
-## Limites assumees en Phase 2
+## Identite de l'appelant
 
-- **Aucune authentification.** La portee des cles d'idempotence vaut `anonymous` pour tous
-  les appelants. En Phase 3, ce sera le sujet du JWT : deux clients qui choisissent la meme
-  cle ne doivent pas se voler mutuellement leurs reponses. L'inventer aujourd'hui a partir
-  d'un en-tete non verifie donnerait une fausse impression d'isolation.
+Le service est un serveur de ressources OIDC : `payment:initiate` pour demander un
+encaissement, `payment:read` pour consulter. Une portee reconnue ailleurs sur la plateforme
+ne vaut rien ici, et l'audience du jeton est verifiee en plus de sa signature.
+
+**L'identite de l'appelant fait partie de la cle d'idempotence.** C'est la consequence la
+moins evidente de l'authentification, et elle corrige une faille reelle : les cles sont
+choisies par le client, et rien n'empeche un client d'utiliser un compteur plutot qu'un
+identifiant aleatoire. Deux marchands finiraient donc par proposer `paiement-1`. Sans
+cloisonnement, le second recevrait la transaction du premier avec un statut d'apparence
+normale et croirait sa demande prise en charge alors qu'elle aurait ete purement ignoree —
+un encaissement perdu, sans erreur nulle part.
+
+La contrainte `UNIQUE (scope, key)` existait des la Phase 2 ; la portee reelle n'est
+arrivee qu'avec l'authentification, faute d'identite verifiable avant. Elle vient du jeton,
+jamais d'un en-tete : un en-tete non verifie donnerait une fausse impression d'isolation,
+puisque n'importe qui pourrait s'y declarer n'importe qui et lire par simple collision de
+cle les transactions d'un autre marchand.
+
+Trois tests verrouillent cela : deux sujets differents avec la meme cle obtiennent bien
+deux transactions distinctes ; le meme sujet qui rejoue retrouve la sienne — contre-epreuve
+sans laquelle le premier test passerait tout aussi bien si l'idempotence avait cesse de
+fonctionner ; et un montant different sous la cle d'un autre ne remonte aucun conflit, un
+message d'erreur revelant a lui seul l'existence de la transaction voisine.
+
+### Vers le grand livre
+
+`payment-service` s'authentifie **en tant que lui-meme** aupres du grand livre, par
+`client_credentials`, et non au nom du marchand appelant. L'ecriture comptable est sa
+decision, prise apres validation du montant, des frais et de l'etat de la transaction.
+Propager le jeton du marchand lui accorderait indirectement `ledger:post`, c'est-a-dire le
+pouvoir de se crediter lui-meme.
+
+---
+
+## Limites assumees
+
 - **Le relais d'outbox tourne en une seule instance.** Plusieurs relais concurrents
   pourraient publier deux evenements d'un meme agregat dans le desordre. L'ordre par
   agregat ne depend cependant pas du relais mais du verrou pessimiste sur la ligne de la
