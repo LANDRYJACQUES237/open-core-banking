@@ -1,0 +1,216 @@
+openapi: 3.0.3
+
+info:
+  title: Provider API
+  version: 1.0.0
+  description: |
+    Adaptateur des operateurs Mobile Money. Deux surfaces de nature tres differente.
+
+    **Les webhooks** sont exposes a Internet : ce sont les operateurs qui appellent. Ils
+    ne sont pas proteges par un jeton mais par une **signature HMAC** verifiee sur le
+    corps brut, avant tout parsing. C'est la seule surface publique de la plateforme.
+
+    **Les operations** sont en lecture seule et servent au diagnostic : ou en est une
+    demande, combien de fois a-t-elle ete relancee, pourquoi est-elle restee sans reponse.
+
+    Ce service ne decide de rien sur le plan metier. Il traduit, il insiste, et il rapporte.
+    En particulier, il ne conclut jamais a l'echec parce qu'un operateur se tait.
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+servers:
+  - url: http://localhost:8083
+    description: Developpement local
+
+tags:
+  - name: webhooks
+    description: Rappels entrants des operateurs
+  - name: operations
+    description: Consultation des operations operateur
+
+paths:
+
+  /webhooks/{providerCode}:
+    post:
+      tags: [webhooks]
+      operationId: receiveCallback
+      summary: Recoit un rappel d'operateur
+      description: |
+        Verifie la signature, conserve le message brut, puis repond immediatement.
+
+        **La reponse est toujours `200`, meme pour un doublon ou un rappel tardif.**
+        Repondre en erreur declencherait des retentatives de l'operateur sur une operation
+        deja close, c'est-a-dire une tempete d'appels sans objet. Seule une signature
+        invalide donne un `401` : dans ce cas, l'appelant n'est pas l'operateur.
+
+        Le traitement metier est asynchrone. L'accuse de reception ne signifie pas que
+        l'operation a avance, seulement que le message est enregistre et ne sera pas perdu.
+      parameters:
+        - name: providerCode
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [MTN_MOMO, ORANGE_MONEY]
+        - name: X-OCB-Signature
+          in: header
+          required: true
+          description: HMAC-SHA256 hexadecimal, prefixe `sha256=`, calcule sur `timestamp.corps-brut`.
+          schema:
+            type: string
+        - name: X-OCB-Timestamp
+          in: header
+          required: true
+          description: |
+            Horodatage Unix en secondes. Sert a borner la fenetre de rejeu : une signature
+            capturee ne reste utilisable que quelques minutes.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProviderCallback'
+      responses:
+        '200':
+          description: Rappel enregistre, ou deja connu
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CallbackAck'
+        '401':
+          description: Signature absente, invalide ou expiree
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /v1/operations/{transactionId}:
+    get:
+      tags: [operations]
+      operationId: getOperation
+      summary: Consulte l'operation associee a une transaction
+      parameters:
+        - name: transactionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Operation trouvee
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderOperation'
+        '404': { $ref: '#/components/responses/NotFound' }
+
+components:
+
+  schemas:
+
+    OperationStatus:
+      type: string
+      enum: [PENDING, ACCEPTED, SUCCEEDED, FAILED, UNRESOLVED]
+      description: |
+        `PENDING` — la demande a ete emise, l'operateur n'a pas encore accuse reception.
+        Egalement l'etat d'une demande dont l'appel a expire : on ne sait pas si elle est
+        parvenue.
+
+        `UNRESOLVED` — le budget de relance est epuise sans statut definitif. Ce n'est
+        **pas** un echec : l'argent a peut-etre bouge, seule la reconciliation tranchera.
+
+    ProviderCallback:
+      type: object
+      required: [eventId, externalRef, status]
+      properties:
+        eventId:
+          type: string
+          description: |
+            Identifiant du rappel cote operateur. Cle de deduplication : les operateurs
+            rejouent leurs rappels, parfois des heures plus tard.
+        externalRef:
+          type: string
+          description: Reference que nous avions transmise a l'operateur.
+        providerRef:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [SUCCEEDED, FAILED, PENDING]
+        fee:
+          type: string
+          nullable: true
+          description: Commission prelevee par l'operateur, en chaine.
+        currency:
+          type: string
+          nullable: true
+        errorCode:
+          type: string
+          nullable: true
+        errorMessage:
+          type: string
+          nullable: true
+
+    CallbackAck:
+      type: object
+      required: [received]
+      properties:
+        received: { type: boolean }
+        duplicate:
+          type: boolean
+          description: Vrai si ce rappel avait deja ete recu. L'operateur n'a pas a s'en soucier.
+
+    ProviderOperation:
+      type: object
+      required: [transactionId, providerCode, status, attemptCount, pollAttempts, createdAt, updatedAt]
+      properties:
+        transactionId: { type: string, format: uuid }
+        providerCode: { type: string }
+        externalRef: { type: string }
+        providerRef: { type: string, nullable: true }
+        status: { $ref: '#/components/schemas/OperationStatus' }
+        attemptCount:
+          type: integer
+          format: int32
+          description: Nombre d'appels sortants vers l'operateur.
+        pollAttempts:
+          type: integer
+          format: int32
+          description: Nombre de relances de statut.
+        nextPollAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Nul quand plus aucune relance n'est prevue.
+        pollBudgetExhausted: { type: boolean }
+        lastError: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    Problem:
+      type: object
+      required: [type, title, status]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer, format: int32 }
+        detail: { type: string }
+        instance: { type: string }
+        code: { type: string }
+        correlationId: { type: string }
+
+  responses:
+    BadRequest:
+      description: Requete malformee
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: Ressource introuvable
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }

@@ -58,7 +58,6 @@ ocb:
       # faire tourner deux instances logiques du service, et interdit d'isoler proprement
       # des suites de tests qui partagent un meme courtier.
       provider-events: payment-service.provider-events
-      provider-simulator: provider-simulator
 
   ledger:
     base-url: ${LEDGER_BASE_URL:http://localhost:8081}
@@ -80,10 +79,9 @@ ocb:
       basis-points: 100
       fixed: 0
 
-  provider:
-    simulator:
-      # Echafaudage de Phase 2 : remplace par provider-service en Phase 3.
-      enabled: ${PROVIDER_SIMULATOR_ENABLED:true}
+  # Aucune configuration d'operateur ici : depuis la Phase 3, provider-service consomme
+  # ocb.cmd.provider.v1 et publie ocb.evt.provider.v1. Ce service ne connait des
+  # operateurs que leur code, transporte dans les evenements.
 
 management:
   endpoints:

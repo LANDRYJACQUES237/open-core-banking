@@ -18,12 +18,21 @@ import java.math.BigDecimal;
 import java.time.Instant;
 
 /**
- * Operateur simule. <b>Echafaudage de Phase 2, supprime en Phase 3.</b>
+ * Doublure de {@code provider-service}, <b>dans les sources de test uniquement</b>.
  *
- * <p>Il occupe la place exacte de {@code provider-service} : il consomme
- * {@code ocb.cmd.provider.v1} et publie sur {@code ocb.evt.provider.v1}. Quand le vrai
- * service arrivera, cette classe disparaitra sans qu'aucun contrat ne change — c'est
- * precisement ce que permet le decouplage par le bus.
+ * <p>En Phase 2, cette classe vivait dans le code de production et tenait lieu
+ * d'operateur. En Phase 3, {@code provider-service} a pris sa place sur les memes topics,
+ * <b>sans qu'aucun contrat ne change</b> — c'est la demonstration que le decouplage par
+ * le bus tient ses promesses.
+ *
+ * <p>Elle n'a pas disparu pour autant, et sa place actuelle est la bonne. Du point de vue
+ * de {@code payment-service}, {@code provider-service} est un collaborateur externe :
+ * le doubler dans ses tests releve de la meme discipline que bouchonner le grand livre
+ * avec WireMock. Un test de {@code payment-service} qui exigerait le demarrage d'un autre
+ * service ne testerait plus une frontiere, mais un assemblage.
+ *
+ * <p>Le vrai comportement de l'adaptateur operateur — appels HTTP, delais, rappels
+ * signes, relance de statut — est teste dans {@code provider-service}, ou il vit.
  *
  * <p><b>Le comportement est pilote par le montant</b>, convention reellement utilisee par
  * les bacs a sable des prestataires de paiement : elle evite d'ajouter une API
@@ -58,7 +67,7 @@ public class SimulatedProviderConsumer {
     }
 
     @KafkaListener(topics = "#{T(com.ocb.platform.events.Topics).CMD_PROVIDER}",
-            groupId = "${ocb.kafka.groups.provider-simulator}",
+            groupId = "${ocb.kafka.groups.provider-simulator:provider-simulator}",
             containerFactory = "paymentKafkaListenerContainerFactory")
     public void onCommand(String rawMessage) throws Exception {
         ReceivedEvent event = mapper.readValue(rawMessage, ReceivedEvent.class);

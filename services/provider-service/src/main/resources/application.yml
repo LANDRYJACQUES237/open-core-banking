@@ -1,0 +1,103 @@
+spring:
+  application:
+    name: provider-service
+
+  datasource:
+    url: ${PROVIDER_DB_URL:jdbc:postgresql://localhost:5434/provider}
+    username: ${PROVIDER_DB_USER:provider_app}
+    password: ${PROVIDER_DB_PASSWORD:}
+    hikari:
+      pool-name: provider-pool
+      maximum-pool-size: ${PROVIDER_DB_POOL_SIZE:10}
+
+  flyway:
+    enabled: true
+    schemas: provider
+    default-schema: provider
+    user: ${PROVIDER_DB_MIGRATION_USER:postgres}
+    password: ${PROVIDER_DB_MIGRATION_PASSWORD:}
+    placeholders:
+      providerAppRole: ${PROVIDER_APP_ROLE:provider_app}
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+    listener:
+      ack-mode: record
+
+  jackson:
+    default-property-inclusion: non_null
+
+server:
+  port: ${PROVIDER_PORT:8083}
+  error:
+    include-message: never
+    include-stacktrace: never
+
+ocb:
+  kafka:
+    groups:
+      provider-commands: provider-service.commands
+
+  outbox:
+    schema: provider
+    batch-size: 100
+    poll-interval: PT1S
+    send-timeout: PT10S
+    retention: P7D
+
+  provider:
+    # Adresse a laquelle les operateurs nous rappellent. En Phase 5, ce sera l'ingress public.
+    callback-base-url: ${PROVIDER_CALLBACK_BASE_URL:http://localhost:8083}
+
+    webhook:
+      # Aucun secret par defaut : une valeur vide validerait toute signature calculee avec
+      # une chaine vide, ce qui reviendrait a n'avoir aucune protection tout en en
+      # affichant une. L'absence de configuration fait echouer la verification.
+      secrets:
+        MTN_MOMO: ${MTN_WEBHOOK_SECRET:}
+        ORANGE_MONEY: ${ORANGE_WEBHOOK_SECRET:}
+      replay-window: PT5M
+
+    operators:
+      base-urls:
+        MTN_MOMO: ${MTN_API_BASE_URL:http://localhost:9101}
+        ORANGE_MONEY: ${ORANGE_API_BASE_URL:http://localhost:9102}
+      connect-timeout: PT2S
+      read-timeout: PT15S
+
+    poll:
+      # Le budget se mesure depuis la premiere emission. Au-dela, l'operation devient
+      # UNRESOLVED : une ignorance declaree, qui appelle un arbitrage plutot qu'une
+      # conclusion automatique.
+      budget: PT24H
+      interval: PT5S
+      batch-size: 50
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%X{correlationId:-}] %logger{36} - %msg%n"
+  level:
+    com.ocb: ${PROVIDER_LOG_LEVEL:INFO}
