@@ -31,7 +31,7 @@ Les proprietes suivantes sont implementees **et testees**, pas seulement mention
 | Machine a etats a transitions gardees | Livre | `payment-service` |
 | Contrat d'evenements opposable, valide en CI | Livre | `contracts/events` |
 | Donnee personnelle non conservee plutot que chiffree | Livre | `payment-service` |
-| Consommateurs Kafka idempotents | Phase 4 | `notification-service` |
+| Consommateurs Kafka idempotents | Livre | `payment-service` |
 | Saga avec compensation | Phase 4 | decaissement |
 | Timeout traite comme "inconnu", jamais comme echec | Phase 3 | `provider-service` |
 | Callbacks signes **et** polling de reconciliation | Phase 3 | `provider-service` |
@@ -80,7 +80,7 @@ Deux points de decoupage meritent d'etre lus avant le code :
 |---|---|---|
 | 0 | Cadrage, decoupage, contrats d'evenements | Termine |
 | 1 | `ledger-service` : comptes, partie double, soldes, API REST | Termine |
-| 2 | `payment-service` : idempotence, machine a etats, outbox, Kafka | Livre — reste le test de flux complet, a valider en CI |
+| 2 | `payment-service` : idempotence, machine a etats, outbox, Kafka | Termine |
 | 3 | `provider-service` : abstraction operateur, webhooks, polling, **securite OIDC** | A venir |
 | 4 | `notification-service` et saga de decaissement avec compensation | A venir |
 | 5 | Docker Compose, Helm, sondes, observabilite | A venir |
