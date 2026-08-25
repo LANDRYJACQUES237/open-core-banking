@@ -37,8 +37,17 @@ import java.util.UUID;
  * de ce socle sans redefinir la moindre propriete : un {@code @TestPropertySource} sur une
  * sous-classe ferait construire un second contexte, et deux jeux de consommateurs
  * liraient les memes topics en ecrivant dans la meme base.
+ *
+ * <p><b>Pourquoi la configuration de securite de test est importee ici aussi</b>, alors
+ * qu'aucun de ces tests n'emet la moindre requete HTTP. La chaine de securite est
+ * construite au <b>demarrage du contexte</b>, pas au premier appel : elle reclame un
+ * decodeur de jetons, lequel va chercher le JWKS chez le fournisseur d'identite. Sans
+ * doublure, le contexte refuse de demarrer parce qu'aucun Keycloak ne tourne — et l'echec
+ * se presente comme une panne du consommateur Kafka, ce qu'il n'est pas.
  */
 @SpringBootTest
+@org.springframework.context.annotation.Import(
+        com.ocb.platform.security.test.TestSecurityConfiguration.class)
 public abstract class NotificationKafkaTestBase {
 
     protected static final Duration SETTLE_TIMEOUT = Duration.ofSeconds(30);
