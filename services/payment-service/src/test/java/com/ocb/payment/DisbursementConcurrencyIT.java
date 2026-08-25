@@ -1,12 +1,8 @@
 package com.ocb.payment;
 
-import com.ocb.payment.domain.port.LedgerPort;
-import com.ocb.payment.support.LedgerStub;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.Import;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -36,24 +32,16 @@ import static org.assertj.core.api.Assertions.assertThat;
  * n'ecrive, et se croiraient tous finançables. Le portefeuille finirait a decouvert sans
  * qu'aucune demande, prise isolement, n'ait enfreint la regle.
  */
-@Import(com.ocb.payment.support.LedgerStubConfiguration.class)
-class DisbursementConcurrencyIT extends PaymentPersistenceTestBase {
+class DisbursementConcurrencyIT extends StubbedLedgerTestBase {
 
     private static final int CONCURRENT_CALLS = 32;
 
     /** De quoi financer exactement un decaissement de 5 000 augmente de 1 % de frais. */
     private static final String WALLET_FUNDS = "5050";
 
-    @Autowired
-    private LedgerPort ledger;
-
-    private LedgerStub stub;
-    private String wallet;
-
     @BeforeEach
     void fundOneDisbursementOnly() {
-        stub = (LedgerStub) ledger;
-        wallet = "2100.wallet-" + suffix;
+        // Le socle a deja remis la doublure a neuf et nomme le portefeuille.
         stub.credit(wallet, WALLET_FUNDS);
     }
 

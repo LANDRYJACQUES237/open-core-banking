@@ -3,13 +3,11 @@ package com.ocb.payment;
 import com.ocb.payment.application.ProviderOutcomeService;
 import com.ocb.payment.domain.DisbursementEntryRefs;
 import com.ocb.payment.domain.port.LedgerPort;
-import com.ocb.payment.support.LedgerStub;
 import com.ocb.platform.events.Payloads;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.Import;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -35,26 +33,19 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * compense des qu'elle n'a pas de confirmation, et rembourse ainsi des beneficiaires deja
  * payes.
  */
-@Import(com.ocb.payment.support.LedgerStubConfiguration.class)
-class DisbursementSagaIT extends PaymentPersistenceTestBase {
+class DisbursementSagaIT extends StubbedLedgerTestBase {
 
     private static final String AMOUNT = "5000";
     private static final String FEE = "50";
     private static final String FUNDS = "20000";
 
     @Autowired
-    private LedgerPort ledger;
-
-    @Autowired
     private ProviderOutcomeService outcomes;
-
-    private LedgerStub stub;
-    private String wallet;
 
     @BeforeEach
     void fundTheWallet() {
-        stub = (LedgerStub) ledger;
-        wallet = "2100.wallet-" + suffix;
+        // Cette classe rend volontairement le grand livre injoignable ; c'est le socle qui
+        // garantit que ce drapeau ne survit pas a la classe.
         stub.credit(wallet, FUNDS);
     }
 

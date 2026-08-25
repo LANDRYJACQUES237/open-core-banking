@@ -47,6 +47,28 @@ public class LedgerStub implements LedgerPort {
     private volatile boolean unavailable;
     private volatile boolean refusesReversal;
 
+    /**
+     * Remet la doublure a neuf.
+     *
+     * <p>Appelee par {@code StubbedLedgerTestBase} avant chaque test. Cette doublure est un bean
+     * singleton porte par un contexte Spring <b>mis en cache et partage entre classes de
+     * test</b> : un drapeau positionne par une classe survit jusqu'a la suivante. Un test
+     * qui simule un grand livre injoignable rendrait ainsi injoignable le grand livre de
+     * tous les tests executes apres lui.
+     *
+     * <p>Le defaut correspondant ne se voit pas localement si l'ordre d'execution place la
+     * victime avant le coupable : c'est une panne qui n'apparait qu'en integration
+     * continue, sur une machine ou l'ordre des fichiers differe.
+     */
+    public synchronized void reset() {
+        walletBalances.clear();
+        postedByKey.clear();
+        reversalsByOriginal.clear();
+        entries.clear();
+        unavailable = false;
+        refusesReversal = false;
+    }
+
     public void credit(String walletAccountRef, String amount) {
         walletBalances.put(walletAccountRef, new BigDecimal(amount));
     }

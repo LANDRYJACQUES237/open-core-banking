@@ -102,6 +102,21 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>
                     <configuration>
+                        <!--
+                            Ordre d'execution deterministe et identique partout.
+
+                            Le defaut de Maven est l'ordre du systeme de fichiers, qui
+                            differe entre un poste Windows et un agent Linux. Une
+                            dependance entre tests passe alors inapercue en local et
+                            n'echoue qu'en integration continue — ou elle se presente
+                            sous une forme trompeuse, puisque c'est la victime qui echoue
+                            et non le coupable.
+
+                            Cela ne remplace pas des tests independants : cela garantit
+                            seulement qu'un defaut d'independance se manifeste au meme
+                            endroit pour tout le monde.
+                        -->
+                        <runOrder>alphabetical</runOrder>
                         <includes>
                             <include>**/*Test.java</include>
                         </includes>
@@ -114,6 +129,8 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-failsafe-plugin</artifactId>
                     <configuration>
+                        <!-- Meme raison que pour surefire, voir ci-dessus. -->
+                        <runOrder>alphabetical</runOrder>
                         <includes>
                             <include>**/*IT.java</include>
                         </includes>
