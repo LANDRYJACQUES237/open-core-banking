@@ -203,6 +203,34 @@ chose de plus a ne pas perdre. Une reference calculee ne peut pas manquer.
 Elles servent aussi de second garde-fou d'idempotence, en plus de la cle : le grand livre
 refuse deux ecritures de meme reference.
 
+### L'identifiant de transaction aussi
+
+Un decaissement ecrit au grand livre — service distant, qui valide immediatement — **avant**
+de valider sa propre transaction. C'est une double ecriture, et elle laisse une fenetre : si
+le processus meurt entre les deux, notre transaction est annulee, reservation de cle
+d'idempotence comprise, tandis que l'ecriture comptable subsiste.
+
+Le client, qui a vu un timeout, rejoue avec la meme cle. Ne trouvant plus aucune
+reservation, la demande repart comme neuve. Avec un identifiant tire au hasard, elle
+produirait une **seconde** ecriture d'engagement : le portefeuille serait debite deux fois,
+et rien ne le signalerait — les deux ecritures sont equilibrees et legitimes prises
+separement.
+
+L'identifiant est donc derive de l'appelant et de sa cle d'idempotence
+(`RequestIdentity`). Le rejeu retombe sur le meme identifiant, donc sur la meme cle et la
+meme reference d'ecriture ; le grand livre reconnait la sienne et la rend telle quelle.
+L'etat converge au lieu de diverger.
+
+**Uniquement la ou un effet externe precede la validation locale** — decaissement,
+transfert. Un encaissement n'appelle personne avant de valider : son annulation ne laisse
+aucune trace, et un identifiant aleatoire y reste correct. Generaliser la mecanique
+laisserait croire qu'elle protege d'autre chose.
+
+`DisbursementCrashRecoveryIT` execute la demande dans une transaction marquee pour
+annulation — la doublure de grand livre n'y participe pas, comme un vrai appel REST — puis
+rejoue. Verifie dans les deux sens : identifiant aleatoire, le portefeuille est debite deux
+fois.
+
 ---
 
 ## Le decouvert est interdit ici, pas dans le grand livre

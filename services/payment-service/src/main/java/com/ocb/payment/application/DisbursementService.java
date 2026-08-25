@@ -132,7 +132,10 @@ public class DisbursementService {
                                     totalDebit.toPlainString(), available.toPlainString()));
         }
 
-        UUID transactionId = UUID.randomUUID();
+        // Derive de l'appelant et de sa cle, jamais tire au hasard : l'ecriture comptable
+        // qui suit est validee chez le grand livre avant que cette transaction-ci ne le
+        // soit. Voir RequestIdentity pour la fenetre que cela ferme.
+        UUID transactionId = RequestIdentity.of(command.clientId(), command.idempotencyKey());
         PaymentTransaction created = transactions.create(new PaymentTransaction(
                 transactionId, command.externalRef(), TransactionType.DISBURSEMENT,
                 TransactionStatus.CREATED, amount, platformFee, null,
