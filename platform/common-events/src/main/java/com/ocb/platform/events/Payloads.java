@@ -229,6 +229,25 @@ public final class Payloads {
     ) {
     }
 
+    /**
+     * Transfert accompli.
+     *
+     * @param ledgerEntryRef ecriture unique et equilibree. Il n'y en a jamais deux : un
+     *                       transfert ne traverse aucune frontiere de service, donc rien
+     *                       ne peut aboutir a moitie
+     */
+    public record PaymentTransferCompleted(
+            String transactionId,
+            String externalRef,
+            String amount,
+            String currency,
+            String platformFee,
+            String fromWalletAccountRef,
+            String toWalletAccountRef,
+            String ledgerEntryRef
+    ) {
+    }
+
     public record PaymentManualReviewRequired(
             String transactionId,
             String externalRef,

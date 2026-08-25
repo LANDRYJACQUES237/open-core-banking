@@ -82,7 +82,7 @@ Deux points de decoupage meritent d'etre lus avant le code :
 | 1 | `ledger-service` : comptes, partie double, soldes, API REST | Termine |
 | 2 | `payment-service` : idempotence, machine a etats, outbox, Kafka | Termine |
 | 3 | `provider-service` : abstraction operateur, webhooks, polling, **securite OIDC** | Termine |
-| 4 | Saga de decaissement avec compensation, puis `notification-service` et transfert | En cours |
+| 4 | Saga de decaissement, transfert atomique, puis `notification-service` | En cours |
 | 5 | Docker Compose, Helm, sondes, observabilite | A venir |
 | 6 | Documentation, diagrammes, guide de demarrage | A venir |
 

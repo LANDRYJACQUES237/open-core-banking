@@ -95,6 +95,10 @@ class EventContractTest {
                             "0f4d3d7e-1c9a-4a2b-9f3e-2b7c1d5e6a8f", "TX-002", "5000", "XAF",
                             "50", "25", "2100.wallet-c", "JE-20260825-SETTLE01",
                             "+2376****0001")),
+            Map.entry(EventTypes.PAYMENT_TRANSFER_COMPLETED,
+                    new Payloads.PaymentTransferCompleted(
+                            "0f4d3d7e-1c9a-4a2b-9f3e-2b7c1d5e6a8f", "TX-003", "2000", "XAF",
+                            "20", "2100.wallet-a", "2100.wallet-b", "JE-20260825-TRANSF1")),
             Map.entry(EventTypes.PAYMENT_DISBURSEMENT_REVERSED,
                     new Payloads.PaymentDisbursementReversed(
                             "0f4d3d7e-1c9a-4a2b-9f3e-2b7c1d5e6a8f", "TX-002", "5000", "XAF",

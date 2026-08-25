@@ -33,7 +33,13 @@ public final class TransactionStateMachine {
             new EnumMap<>(TransactionStatus.class);
 
     static {
-        ALLOWED.put(CREATED, EnumSet.of(PENDING_PROVIDER, FAILED));
+        // POSTING est atteignable directement depuis CREATED, et uniquement pour un
+        // transfert : il ne passe par aucun operateur, donc par aucun des etats qui
+        // decrivent l'attente d'un tiers. Ajouter cette arete n'affaiblit rien —
+        // COMPLETED reste inaccessible sans passer par POSTING, ce qui est la garantie
+        // qui compte : aucune transaction ne peut se declarer terminee sans qu'une
+        // ecriture ait ete tentee.
+        ALLOWED.put(CREATED, EnumSet.of(PENDING_PROVIDER, POSTING, FAILED));
 
         // L'operateur peut refuser d'emblee, ou ne jamais repondre.
         ALLOWED.put(PENDING_PROVIDER, EnumSet.of(PROVIDER_ACCEPTED, PROVIDER_DECLINED, MANUAL_REVIEW));

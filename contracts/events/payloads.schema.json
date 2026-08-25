@@ -554,6 +554,48 @@
         }
       },
       "additionalProperties": false
+    },
+    "payment.transfer.completed": {
+      "type": "object",
+      "required": [
+        "transactionId",
+        "externalRef",
+        "amount",
+        "currency",
+        "platformFee",
+        "fromWalletAccountRef",
+        "toWalletAccountRef",
+        "ledgerEntryRef"
+      ],
+      "properties": {
+        "transactionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "externalRef": {
+          "type": "string"
+        },
+        "amount": {
+          "$ref": "#/$defs/amount"
+        },
+        "currency": {
+          "$ref": "#/$defs/currency"
+        },
+        "platformFee": {
+          "$ref": "#/$defs/amount"
+        },
+        "fromWalletAccountRef": {
+          "type": "string"
+        },
+        "toWalletAccountRef": {
+          "type": "string"
+        },
+        "ledgerEntryRef": {
+          "type": "string",
+          "description": "Ecriture unique et equilibree. Un transfert n'en produit jamais deux : il ne traverse aucune frontiere de service."
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

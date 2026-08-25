@@ -23,6 +23,9 @@ public final class PaymentErrors {
      * peut recommencer avec un montant moindre.
      */
     public static final String INSUFFICIENT_FUNDS = "PAYMENT_INSUFFICIENT_FUNDS";
+
+    /** Transfert d'un portefeuille vers lui-meme : comptablement nul, mais facture. */
+    public static final String SAME_WALLET_TRANSFER = "PAYMENT_SAME_WALLET_TRANSFER";
     public static final String UNSUPPORTED_PROVIDER = "PAYMENT_UNSUPPORTED_PROVIDER";
 
     /** Le grand livre a refuse l'ecriture. */

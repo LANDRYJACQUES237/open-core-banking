@@ -58,6 +58,19 @@ class TransactionStateMachineTest {
     }
 
     @Test
+    @DisplayName("le chemin d'un transfert court-circuite l'operateur, mais pas POSTING")
+    void transferPathSkipsTheProviderButNotPosting() {
+        // Un transfert entre portefeuilles n'appelle aucun operateur : il n'a rien a faire
+        // dans les etats qui decrivent l'attente d'un tiers.
+        assertThat(TransactionStateMachine.canTransition(CREATED, POSTING)).isTrue();
+        assertThat(TransactionStateMachine.canTransition(POSTING, COMPLETED)).isTrue();
+
+        // Ce que ce raccourci ne doit pas ouvrir : se declarer termine sans avoir tente
+        // la moindre ecriture.
+        assertThat(TransactionStateMachine.canTransition(CREATED, COMPLETED)).isFalse();
+    }
+
+    @Test
     @DisplayName("le chemin nominal d'un encaissement est autorise de bout en bout")
     void nominalCollectionPath() {
         List<TransactionStatus> path = List.of(

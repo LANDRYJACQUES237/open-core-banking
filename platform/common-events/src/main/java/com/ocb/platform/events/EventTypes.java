@@ -44,6 +44,15 @@ public final class EventTypes {
      */
     public static final String PAYMENT_DISBURSEMENT_REVERSED = "payment.disbursement.reversed";
 
+    /**
+     * Transfert entre portefeuilles, deja termine.
+     *
+     * <p>Un seul evenement, et aucun equivalent "requested" : il n'y a pas d'intervalle
+     * entre la demande et son issue. C'est la difference que fait l'absence de systeme
+     * externe dans la boucle.
+     */
+    public static final String PAYMENT_TRANSFER_COMPLETED = "payment.transfer.completed";
+
     public static final String PAYMENT_MANUAL_REVIEW_REQUIRED = "payment.transaction.manual_review_required";
 
     private EventTypes() {

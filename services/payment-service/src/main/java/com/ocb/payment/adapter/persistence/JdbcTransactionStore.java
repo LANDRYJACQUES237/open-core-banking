@@ -54,7 +54,10 @@ public class JdbcTransactionStore implements TransactionStore {
                 .param("currency", t.amount().currencyCode())
                 .param("platformFee", t.platformFee().amount())
                 .param("walletAccountRef", t.walletAccountRef())
-                .param("providerCode", t.providerCode().name())
+                // Nul pour un transfert : il ne passe par aucun operateur. La contrainte
+                // conditionnelle ck_transaction_provider_matches_type verifie en base que
+                // seuls les transferts en sont depourvus.
+                .param("providerCode", t.providerCode() == null ? null : t.providerCode().name())
                 .param("maskedMsisdn", t.maskedMsisdn())
                 .update();
         return find(t.id()).orElseThrow();
@@ -159,7 +162,7 @@ public class JdbcTransactionStore implements TransactionStore {
                 Money.of(rs.getBigDecimal("platform_fee"), currency),
                 providerFee == null ? null : Money.of(providerFee, currency),
                 rs.getString("wallet_account_ref"),
-                ProviderCode.valueOf(rs.getString("provider_code")),
+                providerCodeOf(rs.getString("provider_code")),
                 rs.getString("masked_msisdn"),
                 rs.getString("provider_ref"),
                 rs.getString("ledger_entry_ref"),
@@ -168,5 +171,10 @@ public class JdbcTransactionStore implements TransactionStore {
                 rs.getObject("created_at", OffsetDateTime.class),
                 rs.getObject("updated_at", OffsetDateTime.class),
                 rs.getLong("version"));
+    }
+
+    /** Nul pour un transfert : la colonne est vide, et c'est le modele correct. */
+    private static ProviderCode providerCodeOf(String value) {
+        return value == null ? null : ProviderCode.valueOf(value);
     }
 }

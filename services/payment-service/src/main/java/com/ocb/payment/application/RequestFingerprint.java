@@ -70,6 +70,26 @@ public final class RequestFingerprint {
                 payee.masked()));
     }
 
+    /**
+     * Empreinte d'un transfert.
+     *
+     * <p>Le sens des portefeuilles entre dans l'empreinte dans l'ordre ou il est donne :
+     * un transfert de A vers B et un transfert de B vers A sont deux operations
+     * differentes, et rejouer une cle de l'un sur l'autre doit etre refuse.
+     */
+    public static String ofTransfer(String externalRef,
+                                    Money amount,
+                                    String fromWalletAccountRef,
+                                    String toWalletAccountRef) {
+        return sha256(String.join("|",
+                "TRANSFER",
+                nullSafe(externalRef),
+                amount.toPlainString(),
+                amount.currencyCode(),
+                nullSafe(fromWalletAccountRef),
+                nullSafe(toWalletAccountRef)));
+    }
+
     private static String nullSafe(String value) {
         return value == null ? "" : value;
     }

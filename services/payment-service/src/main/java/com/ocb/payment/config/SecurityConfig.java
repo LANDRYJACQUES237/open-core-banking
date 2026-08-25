@@ -45,6 +45,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/v1/disbursements")
                         .hasAuthority(OcbScopes.authority(OcbScopes.PAYMENT_INITIATE))
 
+                        .requestMatchers(HttpMethod.POST, "/v1/transfers")
+                        .hasAuthority(OcbScopes.authority(OcbScopes.PAYMENT_INITIATE))
+
                         .requestMatchers(HttpMethod.GET, "/v1/transactions/**")
                         .hasAuthority(OcbScopes.authority(OcbScopes.PAYMENT_READ))
 

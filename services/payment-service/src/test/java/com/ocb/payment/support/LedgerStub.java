@@ -118,6 +118,7 @@ public class LedgerStub implements LedgerPort {
             return existing;
         }
 
+        requirePositiveLines(request);
         requireBalanced(request);
         request.lines().forEach(this::apply);
 
@@ -172,6 +173,24 @@ public class LedgerStub implements LedgerPort {
                 ? line.amount().amount().negate()
                 : line.amount().amount();
         walletBalances.merge(line.accountNumber(), delta, BigDecimal::add);
+    }
+
+    /**
+     * Le vrai grand livre refuse toute ligne de montant nul, et cette doublure aussi.
+     *
+     * <p>Sans cette regle, une commission calculee a zero produirait ici une ecriture que
+     * la doublure accepterait et que la production refuserait — le pire ecart possible
+     * entre un test et le systeme reel.
+     */
+    private void requirePositiveLines(EntryRequest request) {
+        request.lines().stream()
+                .filter(line -> line.amount().amount().signum() <= 0)
+                .findFirst()
+                .ifPresent(line -> {
+                    throw new InvariantViolationException(PaymentErrors.LEDGER_REJECTED,
+                            "Ligne de montant non strictement positif sur %s (double)"
+                                    .formatted(line.accountNumber()));
+                });
     }
 
     /**

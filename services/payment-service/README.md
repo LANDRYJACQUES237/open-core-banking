@@ -276,10 +276,20 @@ prouve.
 
 ## Le transfert de portefeuille a portefeuille n'a pas de saga
 
-Et ce n'est pas un oubli. Un transfert entre deux portefeuilles est une **seule ecriture
-equilibree** : `DR 2100.wallet-A`, `CR 2100.wallet-B`. Il ne traverse aucune frontiere de
-service, n'appelle aucun systeme que nous ne controlons pas, et se joue entierement dans
-une transaction ACID du grand livre.
+`POST /v1/transfers` — et l'absence de saga n'est pas un oubli.
+
+Un transfert entre deux portefeuilles est une **seule ecriture equilibree** :
+
+```
+DR  2100.wallet-A     montant + frais
+CR  2100.wallet-B     montant
+CR  4100              frais
+```
+
+Il ne traverse aucune frontiere de service, n'appelle aucun systeme que nous ne controlons
+pas, et se joue entierement dans une transaction ACID du grand livre. Il n'existe aucun
+etat intermediaire ou l'argent aurait quitte un portefeuille sans etre arrive dans
+l'autre : il n'y a donc rien a compenser.
 
 Lui ajouter une saga — etapes intermediaires, compte de passage, compensation — serait de
 la mise en scene : on paierait la complexite d'un protocole distribue pour un probleme qui
@@ -288,6 +298,43 @@ est simplement disponible.
 
 C'est la contrepartie utile du decaissement : elle montre que la saga y est presente parce
 qu'elle y est necessaire, et non par gout du motif.
+
+### Ce que cette absence rend visible
+
+| | Decaissement | Transfert |
+|---|---|---|
+| Ecritures comptables | 2, plus une contre-passation eventuelle | **1** |
+| Etats traverses | `PENDING_PROVIDER` a `COMPLETED` ou `REVERSED` | `CREATED`, `POSTING`, `COMPLETED` |
+| Evenements publies | `requested`, puis `completed` ou `reversed` | **un seul**, `completed` |
+| Reponse HTTP | `202` — il reste a attendre | **`201`** — c'est fini |
+| Compte de passage | oui, `1900` | aucun |
+
+Il n'existe pas de `payment.transfer.requested`, et c'est deliberе : il n'y a pas
+d'intervalle entre la demande et son issue pendant lequel un observateur aurait quelque
+chose a apprendre.
+
+### Ce qui reste commun : le decouvert
+
+Debiter un portefeuille demande de lire son solde puis d'ecrire en fonction de ce qu'on a
+lu, transfert ou pas. **Le meme verrou est pris**, sur le portefeuille emetteur — sans quoi
+un transfert et un decaissement simultanes sur le meme portefeuille se croiraient tous deux
+finançables.
+
+Seul le cote debite est verrouille. Crediter ne peut pas mettre a decouvert, donc n'a rien
+a serialiser, et ne verrouiller qu'un cote supprime **par construction** le risque
+d'interblocage entre un transfert de A vers B et un transfert de B vers A, qui prendraient
+leurs verrous dans l'ordre inverse.
+
+### Deux details que le modele refuse de mentir
+
+Un transfert **ne declare aucun operateur**. La colonne `provider_code` est devenue nullable
+(migration `V5`), avec une contrainte conditionnelle qui exige un operateur pour un
+encaissement ou un decaissement et l'interdit pour un transfert. On ne relache pas une
+regle, on l'exprime correctement. Le champ a quitte les proprietes requises du contrat
+OpenAPI pour la meme raison.
+
+Un transfert **vers soi-meme est refuse** plutot que facture : l'operation serait
+comptablement nulle mais preleverait quand meme la commission.
 
 ---
 
@@ -431,6 +478,7 @@ Le cas `97` est le plus instructif : la transaction reste en attente et ne bascu
 | `PAYMENT_REQUEST_IN_PROGRESS` | 409 | Une requete portant cette cle est en vol ; reessayer |
 | `PAYMENT_INVALID_AMOUNT` | 422 | Les frais absorberaient la totalite du montant |
 | `PAYMENT_INSUFFICIENT_FUNDS` | 422 | Le portefeuille ne couvre pas le montant augmente des frais |
+| `PAYMENT_SAME_WALLET_TRANSFER` | 422 | Transfert d'un portefeuille vers lui-meme |
 | `PAYMENT_INVALID_MSISDN` | 422 | Numero mal forme |
 | `PAYMENT_LEDGER_REJECTED` | 422 | Le grand livre a refuse l'ecriture |
 | `PAYMENT_TRANSACTION_NOT_FOUND` | 404 | Transaction inconnue |
@@ -490,4 +538,8 @@ pouvoir de se crediter lui-meme.
 - **Un decaissement `UNRESOLVED` immobilise des fonds.** Ils restent en 1900 jusqu'a
   arbitrage humain. Le filet naturel est la reconciliation de releve — comparer le releve
   quotidien de l'operateur a nos ecritures — prevue apres la Phase 5.
-- **Pas de transfert de portefeuille a portefeuille.** Phase 4b.
+- **Le portefeuille destinataire d'un transfert n'est pas stocke** dans
+  `payment_transaction`, qui ne porte que le portefeuille debite. C'est coherent avec la
+  division des roles — ce service tient l'etat d'avancement, le grand livre tient le
+  mouvement — et la contrepartie figure dans le journal d'audit et dans l'evenement publie.
+- **Pas de notification.** Phase 4b.

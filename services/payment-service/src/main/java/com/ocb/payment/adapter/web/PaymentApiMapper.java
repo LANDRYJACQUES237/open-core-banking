@@ -22,9 +22,14 @@ public class PaymentApiMapper {
                 t.amount().currencyCode(),
                 t.platformFee().toPlainString(),
                 t.walletAccountRef(),
-                ProviderCode.fromValue(t.providerCode().name()),
                 t.createdAt(),
                 t.updatedAt());
+        // Absent d'un transfert, qui ne passe par aucun operateur. Le champ a quitte les
+        // proprietes requises du contrat pour cette raison : y mettre une valeur par
+        // defaut ferait croire a un operateur qui n'existe pas.
+        api.setProviderCode(t.providerCode() == null
+                ? null
+                : ProviderCode.fromValue(t.providerCode().name()));
         api.setProviderFee(t.providerFee() == null ? null : t.providerFee().toPlainString());
         api.setMaskedMsisdn(t.maskedMsisdn());
         api.setProviderRef(t.providerRef());

@@ -113,6 +113,48 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/UnprocessableEntity' }
 
+  /v1/transfers:
+    post:
+      tags: [transfers]
+      operationId: requestTransfer
+      summary: Transfere entre deux portefeuilles
+      description: |
+        Debite un portefeuille et en credite un autre en **une seule ecriture
+        equilibree**. L'operation est terminee quand la reponse arrive : elle ne traverse
+        aucune frontiere de service et n'appelle aucun operateur, donc rien ne peut
+        aboutir a moitie.
+
+        C'est la raison pour laquelle il n'y a **pas de saga ici**, contrairement au
+        decaissement. Une saga se justifie quand l'atomicite est impossible, pas quand
+        elle est disponible.
+
+        Le solde du portefeuille debite est verifie sous verrou, comme pour un
+        decaissement : un portefeuille ne passe jamais a decouvert.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransferRequest'
+      responses:
+        '201':
+          description: Transfert effectue
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '200':
+          description: Requete rejouee, transfert deja effectue
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+
   /v1/transactions/{transactionId}:
     get:
       tags: [transactions]
@@ -278,9 +320,35 @@ components:
         providerCode:
           $ref: '#/components/schemas/ProviderCode'
 
+    TransferRequest:
+      type: object
+      required: [externalRef, amount, currency, fromWalletAccountRef, toWalletAccountRef]
+      properties:
+        externalRef:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Reference de l'appelant, pour rapprochement de son cote.
+        amount:
+          $ref: '#/components/schemas/Amount'
+        currency:
+          $ref: '#/components/schemas/Currency'
+        fromWalletAccountRef:
+          type: string
+          maxLength: 100
+          description: Portefeuille debite, du montant augmente des frais.
+          example: "2100.wallet-a"
+        toWalletAccountRef:
+          type: string
+          maxLength: 100
+          description: Portefeuille credite, du montant seul.
+          example: "2100.wallet-b"
+
     Transaction:
       type: object
-      required: [transactionId, externalRef, type, status, amount, currency, platformFee, walletAccountRef, providerCode, createdAt, updatedAt]
+      # providerCode est absent des champs requis : un transfert entre portefeuilles ne
+      # passe par aucun operateur. Le declarer requis obligerait a inventer une valeur.
+      required: [transactionId, externalRef, type, status, amount, currency, platformFee, walletAccountRef, createdAt, updatedAt]
       properties:
         transactionId: { type: string, format: uuid }
         externalRef: { type: string }

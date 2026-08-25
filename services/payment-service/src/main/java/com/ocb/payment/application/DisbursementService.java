@@ -197,7 +197,11 @@ public class DisbursementService {
      *
      * <p>Nos frais sont acquis des l'engagement, et non a la livraison : c'est la prise en
      * charge de l'ordre qui est facturee. En consequence, une compensation les rend elle
-     * aussi — la contre-passation inverse les trois lignes, pas seulement la premiere.
+     * aussi — la contre-passation inverse toutes les lignes, pas seulement la premiere.
+     *
+     * <p>La ligne de commission disparait quand la commission est nulle : le grand livre
+     * refuse toute ligne de montant nul, si bien qu'un bareme configure a zero rendrait
+     * sinon tout decaissement impossible.
      */
     private LedgerPort.EntryRequest reservationEntry(UUID transactionId,
                                                      DisbursementCommand command,
@@ -213,10 +217,10 @@ public class DisbursementService {
                 command.externalRef(),
                 "Engagement decaissement %s %s".formatted(
                         amount.toPlainString(), command.providerCode()),
-                List.of(
+                TransferService.feeAware(
                         LedgerPort.Line.debit(command.walletAccountRef(), totalDebit),
                         LedgerPort.Line.credit(LedgerAccounts.DISBURSEMENT_SUSPENSE, amount),
-                        LedgerPort.Line.credit(LedgerAccounts.FEE_INCOME, platformFee)));
+                        platformFee));
     }
 
     public record Result(PaymentTransaction transaction, boolean created) {
