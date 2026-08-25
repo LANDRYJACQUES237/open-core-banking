@@ -7,7 +7,8 @@ import com.ocb.platform.events.EventTypes;
 import com.ocb.platform.events.Payloads;
 import com.ocb.platform.events.ReceivedEvent;
 import com.ocb.platform.web.CorrelationIdFilter;
-import com.ocb.provider.application.CollectionExecutionService;
+import com.ocb.provider.application.OperationExecutionService;
+import com.ocb.provider.domain.OperationType;
 import com.ocb.provider.domain.ProviderCode;
 import com.ocb.platform.kafka.ProcessedMessageStore;
 import org.slf4j.Logger;
@@ -37,15 +38,15 @@ public class ProviderCommandConsumer {
 
     private static final Logger log = LoggerFactory.getLogger(ProviderCommandConsumer.class);
 
-    private final CollectionExecutionService collections;
+    private final OperationExecutionService operations;
     private final ProcessedMessageStore processed;
     private final ObjectMapper mapper = EventJson.mapper();
     private final String consumerGroup;
 
-    public ProviderCommandConsumer(CollectionExecutionService collections,
+    public ProviderCommandConsumer(OperationExecutionService operations,
                                    ProcessedMessageStore processed,
                                    @Value("${ocb.kafka.groups.provider-commands}") String consumerGroup) {
-        this.collections = collections;
+        this.operations = operations;
         this.processed = processed;
         this.consumerGroup = consumerGroup;
     }
@@ -69,24 +70,38 @@ public class ProviderCommandConsumer {
                 return;
             }
 
-            if (!EventTypes.PROVIDER_COLLECTION_EXECUTE.equals(event.eventType())) {
-                // Type inconnu de ce service : on acquitte plutot que d'echouer, sans quoi
-                // tout ajout retrocompatible sur le topic deviendrait une panne.
-                log.debug("Type {} ignore par ce consommateur", event.eventType());
-                return;
+            switch (event.eventType()) {
+                case EventTypes.PROVIDER_COLLECTION_EXECUTE -> {
+                    Payloads.ProviderCollectionExecute command =
+                            event.payloadAs(mapper, Payloads.ProviderCollectionExecute.class);
+                    operations.execute(
+                            UUID.fromString(command.transactionId()),
+                            ProviderCode.valueOf(command.providerCode()),
+                            OperationType.COLLECTION,
+                            command.externalRef(),
+                            command.idempotencyKey(),
+                            Money.parse(command.amount(), command.currency()),
+                            command.payerMsisdn(),
+                            event.correlationId());
+                }
+                case EventTypes.PROVIDER_DISBURSEMENT_EXECUTE -> {
+                    Payloads.ProviderDisbursementExecute command =
+                            event.payloadAs(mapper, Payloads.ProviderDisbursementExecute.class);
+                    operations.execute(
+                            UUID.fromString(command.transactionId()),
+                            ProviderCode.valueOf(command.providerCode()),
+                            OperationType.DISBURSEMENT,
+                            command.externalRef(),
+                            command.idempotencyKey(),
+                            Money.parse(command.amount(), command.currency()),
+                            command.payeeMsisdn(),
+                            event.correlationId());
+                }
+                default ->
+                    // Type inconnu de ce service : on acquitte plutot que d'echouer, sans
+                    // quoi tout ajout retrocompatible sur le topic deviendrait une panne.
+                    log.debug("Type {} ignore par ce consommateur", event.eventType());
             }
-
-            Payloads.ProviderCollectionExecute command =
-                    event.payloadAs(mapper, Payloads.ProviderCollectionExecute.class);
-
-            collections.execute(
-                    UUID.fromString(command.transactionId()),
-                    ProviderCode.valueOf(command.providerCode()),
-                    command.externalRef(),
-                    command.idempotencyKey(),
-                    Money.parse(command.amount(), command.currency()),
-                    command.payerMsisdn(),
-                    event.correlationId());
         } finally {
             MDC.remove(CorrelationIdFilter.MDC_KEY);
         }

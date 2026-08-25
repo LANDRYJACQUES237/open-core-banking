@@ -103,7 +103,11 @@ ocb:
 
   fees:
     collection:
-      # 1 % des encaissements.
+      # 1 % des encaissements, retenu sur le montant recu.
+      basis-points: 100
+      fixed: 0
+    disbursement:
+      # 1 % des decaissements, preleve en plus du montant envoye.
       basis-points: 100
       fixed: 0
 

@@ -136,6 +136,133 @@ Ils repondent a deux problemes distincts et aucun ne remplace l'autre.
 
 ---
 
+## La saga de decaissement
+
+Un encaissement n'ecrit au grand livre qu'**apres** confirmation de l'operateur. Tant que
+rien n'est confirme, rien n'a bouge, et un refus se solde par un simple echec. Il n'y a
+rien a defaire, donc rien qui ressemble a une saga.
+
+Un decaissement ne peut pas fonctionner ainsi : **on n'envoie pas de l'argent qu'on n'a pas
+preleve**. Les fonds quittent donc le portefeuille avant l'appel a l'operateur. C'est cette
+inversion, et elle seule, qui cree quelque chose a compenser.
+
+```
+CREATED
+  |-- ecriture 1 : engagement       DR 2100.wallet (montant + frais)
+  |                                 CR 1900 (montant)   CR 4100 (frais)
+PENDING_PROVIDER --> PROVIDER_ACCEPTED --> PROVIDER_CONFIRMED
+        |                                    |-- POSTING
+        |                                    |-- ecriture 2 : livraison
+        |                                    |   DR 1900   DR 5100   CR 1100
+        |                                    '-- COMPLETED
+        |
+        '--> PROVIDER_DECLINED --> COMPENSATING --> contre-passation --> REVERSED
+```
+
+### Le compte 1900 est l'etat d'avancement
+
+Les fonds engages ne partent pas dans le vide : ils stationnent sur le compte de passage
+`1900`. De la, ils repartent vers le float de l'operateur a la livraison, ou reviennent au
+client par contre-passation.
+
+Il n'existe donc **aucune table de sagas en cours**, et c'est delibere : le grand livre en
+tient deja le registre. **Tout montant qui stationne en 1900 est une question ouverte**, et
+le solde de ce compte est, a tout instant, la liste des decaissements en vol. Une table
+parallele serait une seconde source de verite a maintenir en accord avec la premiere, ce
+qui est exactement le genre de duplication qui finit par diverger sans que rien ne le
+signale.
+
+### Une saga n'a pas de branche « en cas de doute »
+
+C'est le point le plus important de cette conception, et celui qu'une saga naive rate.
+
+Quand l'operateur ne conclut pas — budget de relance epuise, silence prolonge — la
+tentation est de compenser : la transaction traine, on rend l'argent, on ferme le dossier.
+Ce serait une faute. **L'operateur a peut-etre paye le beneficiaire.** Rembourser le client
+ferait alors sortir l'argent deux fois, et aucune ecriture ne le signalerait : les deux
+mouvements seraient parfaitement equilibres et parfaitement legitimes pris separement.
+
+Une saga compense un echec **avere**, jamais une incertitude. Un decaissement `UNRESOLVED`
+passe donc en `MANUAL_REVIEW`, fonds laisses en 1900, avec toutes les tentatives
+consignees. Ce n'est pas un trou dans la conception : c'est le refus d'inventer une
+information qu'on n'a pas, exactement comme `provider-service` refuse de conclure sur un
+delai depasse.
+
+La contre-passation rend aussi **nos frais de plateforme**, puisqu'elle inverse les trois
+lignes de l'engagement. Facturer la prise en charge d'un ordre que l'operateur a refuse
+serait indefendable.
+
+### Les references d'ecriture sont derivees, pas retrouvees
+
+`DISB-RES-{transactionId}`, `DISB-SET-{transactionId}`, `DISB-REV-{transactionId}`.
+
+L'etape qui compense s'execute potentiellement des heures plus tard, dans un autre
+processus, apres une redelivraison de message : une reference conservee en base serait une
+chose de plus a ne pas perdre. Une reference calculee ne peut pas manquer.
+
+Elles servent aussi de second garde-fou d'idempotence, en plus de la cle : le grand livre
+refuse deux ecritures de meme reference.
+
+---
+
+## Le decouvert est interdit ici, pas dans le grand livre
+
+Le grand livre enregistre ce qui s'est passe ; il ne refuse pas. Lui confier l'interdiction
+du decouvert l'empecherait un jour d'enregistrer un solde negatif parfaitement legitime :
+frais appliques apres coup, regularisation, correction. Ce n'est pas son role de decider.
+
+La regle vit donc ici. Et elle pose un probleme que sa formulation naive ignore : interdire
+le decouvert suppose de **lire un solde puis d'ecrire en fonction de ce qu'on a lu**. Entre
+les deux, un second decaissement sur le meme portefeuille peut lire le meme solde et se
+croire finançable lui aussi. Les deux ecritures passent, et le portefeuille se retrouve a
+decouvert sans qu'aucune des deux demandes, prise isolement, n'ait enfreint la regle.
+
+**Le verrou est en base, jamais en memoire.** Un `synchronized` ou un `ReentrantLock`
+protege une instance. Des qu'il y en a deux — ce que l'externalisation des groupes de
+consommation rend possible, et ce que Kubernetes rendra normal — la garantie disparait sans
+le moindre signal : le code continue de verrouiller, simplement plus rien n'est serialise
+entre les instances. Une protection qui s'evapore en silence est pire qu'une absence de
+protection, parce qu'on cesse d'y penser.
+
+`PgAdvisoryWalletLock` prend un `pg_advisory_xact_lock` derive du numero de portefeuille.
+Portee **transaction** : la base relache a la validation comme a l'annulation, ce qui evite
+qu'un verrou de session survive a une annulation sur une connexion rendue au pool. Et il
+refuse de s'executer hors transaction, ou il serait pris puis relache a l'instruction
+suivante — donc ne protegerait rien, sans qu'aucune erreur ne le signale.
+
+Le solde lu fait foi : `rawBalanceOf` part de l'instantane **et** ajoute les ecritures
+posterieures. L'instantane n'est qu'un cache.
+
+### Verifie sous concurrence reelle
+
+`DisbursementConcurrencyIT` lance trente-deux demandes au meme instant sur le meme
+portefeuille, chacune avec une cle d'idempotence **differente** — aucune n'est le rejeu
+d'une autre, l'idempotence ne peut donc pas les departager a la place du verrou — sur un
+portefeuille qui ne peut en financer qu'**une seule**.
+
+Le test a ete verifie dans les deux sens : verrou retire, **dix** demandes passent et le
+portefeuille tombe a -45 450 XAF. Sans cette contre-epreuve, un test vert n'aurait rien
+prouve.
+
+---
+
+## Le transfert de portefeuille a portefeuille n'a pas de saga
+
+Et ce n'est pas un oubli. Un transfert entre deux portefeuilles est une **seule ecriture
+equilibree** : `DR 2100.wallet-A`, `CR 2100.wallet-B`. Il ne traverse aucune frontiere de
+service, n'appelle aucun systeme que nous ne controlons pas, et se joue entierement dans
+une transaction ACID du grand livre.
+
+Lui ajouter une saga — etapes intermediaires, compte de passage, compensation — serait de
+la mise en scene : on paierait la complexite d'un protocole distribue pour un probleme qui
+n'en est pas un. Une saga se justifie quand l'atomicite est **impossible**, pas quand elle
+est simplement disponible.
+
+C'est la contrepartie utile du decaissement : elle montre que la saga y est presente parce
+qu'elle y est necessaire, et non par gout du motif.
+
+---
+
 ## Prerequis
 
 - JDK 21
@@ -275,6 +402,7 @@ Le cas `97` est le plus instructif : la transaction reste en attente et ne bascu
 | `PAYMENT_IDEMPOTENCY_KEY_REUSED` | 422 | Meme cle, contenu different — bug appelant, pas un rejeu |
 | `PAYMENT_REQUEST_IN_PROGRESS` | 409 | Une requete portant cette cle est en vol ; reessayer |
 | `PAYMENT_INVALID_AMOUNT` | 422 | Les frais absorberaient la totalite du montant |
+| `PAYMENT_INSUFFICIENT_FUNDS` | 422 | Le portefeuille ne couvre pas le montant augmente des frais |
 | `PAYMENT_INVALID_MSISDN` | 422 | Numero mal forme |
 | `PAYMENT_LEDGER_REJECTED` | 422 | Le grand livre a refuse l'ecriture |
 | `PAYMENT_TRANSACTION_NOT_FOUND` | 404 | Transaction inconnue |
@@ -326,4 +454,12 @@ pouvoir de se crediter lui-meme.
 - **L'appel au grand livre se fait sous verrou.** La transaction locale tient le verrou de
   ligne pendant l'appel HTTP. Acceptable a cette echelle, avec un delai de lecture court
   volontairement ; a surveiller si la latence du grand livre augmente.
-- **Pas de decaissement, pas de saga.** Phase 4.
+- **Le controle de solde appelle le grand livre sous verrou.** Le verrou de portefeuille
+  est tenu pendant la lecture du solde et pendant l'ecriture d'engagement, donc pendant deux
+  appels HTTP. C'est le prix de l'absence de fenetre entre le controle et l'ecriture qui le
+  consomme. A surveiller si la latence du grand livre augmente ; la contention se mesure par
+  portefeuille, pas globalement.
+- **Un decaissement `UNRESOLVED` immobilise des fonds.** Ils restent en 1900 jusqu'a
+  arbitrage humain. Le filet naturel est la reconciliation de releve — comparer le releve
+  quotidien de l'operateur a nos ecritures — prevue apres la Phase 5.
+- **Pas de transfert de portefeuille a portefeuille.** Phase 4b.

@@ -3,9 +3,7 @@
   "$id": "https://ocb.dev/events/payloads.schema.json",
   "title": "Catalogue des charges utiles",
   "description": "Une entree par eventType. Regroupees dans un seul fichier pour que la surface evenementielle complete se lise d'un coup d'oeil.",
-
   "$defs": {
-
     "amount": {
       "type": "string",
       "pattern": "^(0|[1-9][0-9]{0,17})(\\.[0-9]{1,4})?$",
@@ -16,24 +14,49 @@
       "pattern": "^[A-Z]{3}$"
     },
     "maskedMsisdn": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "MSISDN masque, par exemple +2376****1234. Le numero complet ne circule que sur ocb.cmd.provider.v1."
     },
-
     "provider.collection.execute": {
       "type": "object",
-      "required": ["transactionId", "providerCode", "amount", "currency", "payerMsisdn", "externalRef", "idempotencyKey"],
+      "required": [
+        "transactionId",
+        "providerCode",
+        "amount",
+        "currency",
+        "payerMsisdn",
+        "externalRef",
+        "idempotencyKey"
+      ],
       "properties": {
-        "transactionId": { "type": "string", "format": "uuid" },
-        "providerCode": { "type": "string", "enum": ["MTN_MOMO", "ORANGE_MONEY"] },
-        "amount": { "$ref": "#/$defs/amount" },
-        "currency": { "$ref": "#/$defs/currency" },
+        "transactionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "providerCode": {
+          "type": "string",
+          "enum": [
+            "MTN_MOMO",
+            "ORANGE_MONEY"
+          ]
+        },
+        "amount": {
+          "$ref": "#/$defs/amount"
+        },
+        "currency": {
+          "$ref": "#/$defs/currency"
+        },
         "payerMsisdn": {
           "type": "string",
           "pattern": "^\\+[0-9]{9,15}$",
           "description": "Numero complet. Necessaire ici, et uniquement ici, pour appeler l'operateur."
         },
-        "externalRef": { "type": "string" },
+        "externalRef": {
+          "type": "string"
+        },
         "idempotencyKey": {
           "type": "string",
           "description": "Cle a transmettre a l'operateur. Une retentative apres timeout ne doit pas creer un second paiement chez lui."
@@ -41,125 +64,494 @@
       },
       "additionalProperties": false
     },
-
     "provider.operation.accepted": {
       "type": "object",
-      "required": ["transactionId", "providerCode", "providerRef"],
+      "required": [
+        "transactionId",
+        "providerCode",
+        "providerRef"
+      ],
       "properties": {
-        "transactionId": { "type": "string", "format": "uuid" },
-        "providerCode": { "type": "string" },
-        "providerRef": { "type": "string", "description": "Reference attribuee par l'operateur." },
-        "acceptedAt": { "type": ["string", "null"], "format": "date-time" }
+        "transactionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "providerCode": {
+          "type": "string"
+        },
+        "providerRef": {
+          "type": "string",
+          "description": "Reference attribuee par l'operateur."
+        },
+        "acceptedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
       },
       "additionalProperties": false
     },
-
     "provider.operation.succeeded": {
       "type": "object",
       "description": "Statut definitif favorable. N'est jamais emis sur un timeout : une absence de reponse n'autorise aucune conclusion.",
-      "required": ["transactionId", "providerCode", "providerRef", "providerFee", "currency", "resolvedBy"],
+      "required": [
+        "transactionId",
+        "providerCode",
+        "providerRef",
+        "providerFee",
+        "currency",
+        "resolvedBy"
+      ],
       "properties": {
-        "transactionId": { "type": "string", "format": "uuid" },
-        "providerCode": { "type": "string" },
-        "providerRef": { "type": "string" },
-        "providerFee": { "$ref": "#/$defs/amount", "description": "Commission prelevee par l'operateur." },
-        "currency": { "$ref": "#/$defs/currency" },
-        "settledAt": { "type": ["string", "null"], "format": "date-time" },
+        "transactionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "providerCode": {
+          "type": "string"
+        },
+        "providerRef": {
+          "type": "string"
+        },
+        "providerFee": {
+          "$ref": "#/$defs/amount",
+          "description": "Commission prelevee par l'operateur."
+        },
+        "currency": {
+          "$ref": "#/$defs/currency"
+        },
+        "settledAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
         "resolvedBy": {
           "type": "string",
-          "enum": ["CALLBACK", "POLL"],
+          "enum": [
+            "CALLBACK",
+            "POLL"
+          ],
           "description": "Chemin par lequel le statut definitif a ete obtenu. Le callback donne la rapidite, le polling la certitude."
         }
       },
       "additionalProperties": false
     },
-
     "provider.operation.failed": {
       "type": "object",
       "description": "Statut definitif defavorable, explicitement renvoye par l'operateur.",
-      "required": ["transactionId", "providerCode", "errorCode", "resolvedBy"],
+      "required": [
+        "transactionId",
+        "providerCode",
+        "errorCode",
+        "resolvedBy"
+      ],
       "properties": {
-        "transactionId": { "type": "string", "format": "uuid" },
-        "providerCode": { "type": "string" },
-        "providerRef": { "type": ["string", "null"] },
-        "errorCode": { "type": "string" },
-        "errorMessage": { "type": ["string", "null"] },
-        "resolvedBy": { "type": "string", "enum": ["CALLBACK", "POLL"] }
+        "transactionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "providerCode": {
+          "type": "string"
+        },
+        "providerRef": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "errorCode": {
+          "type": "string"
+        },
+        "errorMessage": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "resolvedBy": {
+          "type": "string",
+          "enum": [
+            "CALLBACK",
+            "POLL"
+          ]
+        }
       },
       "additionalProperties": false
     },
-
     "provider.operation.unresolved": {
       "type": "object",
       "description": "Budget de polling epuise sans statut definitif. Ne signifie PAS echec : l'argent a peut-etre bouge. La transaction passe en revue manuelle, pas en echec.",
-      "required": ["transactionId", "providerCode", "pollAttempts"],
+      "required": [
+        "transactionId",
+        "providerCode",
+        "pollAttempts"
+      ],
       "properties": {
-        "transactionId": { "type": "string", "format": "uuid" },
-        "providerCode": { "type": "string" },
-        "providerRef": { "type": ["string", "null"] },
-        "pollAttempts": { "type": "integer", "minimum": 0 },
-        "lastKnownStatus": { "type": ["string", "null"] }
+        "transactionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "providerCode": {
+          "type": "string"
+        },
+        "providerRef": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pollAttempts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lastKnownStatus": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       },
       "additionalProperties": false
     },
-
     "payment.collection.requested": {
       "type": "object",
-      "required": ["transactionId", "externalRef", "amount", "currency", "platformFee", "walletAccountRef", "providerCode"],
+      "required": [
+        "transactionId",
+        "externalRef",
+        "amount",
+        "currency",
+        "platformFee",
+        "walletAccountRef",
+        "providerCode"
+      ],
       "properties": {
-        "transactionId": { "type": "string", "format": "uuid" },
-        "externalRef": { "type": "string" },
-        "amount": { "$ref": "#/$defs/amount" },
-        "currency": { "$ref": "#/$defs/currency" },
-        "platformFee": { "$ref": "#/$defs/amount" },
-        "walletAccountRef": { "type": "string" },
-        "providerCode": { "type": "string" },
-        "maskedMsisdn": { "$ref": "#/$defs/maskedMsisdn" }
+        "transactionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "externalRef": {
+          "type": "string"
+        },
+        "amount": {
+          "$ref": "#/$defs/amount"
+        },
+        "currency": {
+          "$ref": "#/$defs/currency"
+        },
+        "platformFee": {
+          "$ref": "#/$defs/amount"
+        },
+        "walletAccountRef": {
+          "type": "string"
+        },
+        "providerCode": {
+          "type": "string"
+        },
+        "maskedMsisdn": {
+          "$ref": "#/$defs/maskedMsisdn"
+        }
       },
       "additionalProperties": false
     },
-
     "payment.collection.completed": {
       "type": "object",
-      "required": ["transactionId", "externalRef", "amount", "currency", "platformFee", "providerFee", "walletAccountRef", "ledgerEntryRef"],
+      "required": [
+        "transactionId",
+        "externalRef",
+        "amount",
+        "currency",
+        "platformFee",
+        "providerFee",
+        "walletAccountRef",
+        "ledgerEntryRef"
+      ],
       "properties": {
-        "transactionId": { "type": "string", "format": "uuid" },
-        "externalRef": { "type": "string" },
-        "amount": { "$ref": "#/$defs/amount" },
-        "currency": { "$ref": "#/$defs/currency" },
-        "platformFee": { "$ref": "#/$defs/amount" },
-        "providerFee": { "$ref": "#/$defs/amount" },
-        "walletAccountRef": { "type": "string" },
-        "ledgerEntryRef": { "type": "string", "description": "Reference de l'ecriture comptable, qui rend le mouvement verifiable dans le grand livre." },
-        "maskedMsisdn": { "$ref": "#/$defs/maskedMsisdn" }
+        "transactionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "externalRef": {
+          "type": "string"
+        },
+        "amount": {
+          "$ref": "#/$defs/amount"
+        },
+        "currency": {
+          "$ref": "#/$defs/currency"
+        },
+        "platformFee": {
+          "$ref": "#/$defs/amount"
+        },
+        "providerFee": {
+          "$ref": "#/$defs/amount"
+        },
+        "walletAccountRef": {
+          "type": "string"
+        },
+        "ledgerEntryRef": {
+          "type": "string",
+          "description": "Reference de l'ecriture comptable, qui rend le mouvement verifiable dans le grand livre."
+        },
+        "maskedMsisdn": {
+          "$ref": "#/$defs/maskedMsisdn"
+        }
       },
       "additionalProperties": false
     },
-
     "payment.collection.failed": {
       "type": "object",
-      "required": ["transactionId", "externalRef", "amount", "currency", "failureCode"],
+      "required": [
+        "transactionId",
+        "externalRef",
+        "amount",
+        "currency",
+        "failureCode"
+      ],
       "properties": {
-        "transactionId": { "type": "string", "format": "uuid" },
-        "externalRef": { "type": "string" },
-        "amount": { "$ref": "#/$defs/amount" },
-        "currency": { "$ref": "#/$defs/currency" },
-        "failureCode": { "type": "string" },
-        "failureReason": { "type": ["string", "null"] },
-        "maskedMsisdn": { "$ref": "#/$defs/maskedMsisdn" }
+        "transactionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "externalRef": {
+          "type": "string"
+        },
+        "amount": {
+          "$ref": "#/$defs/amount"
+        },
+        "currency": {
+          "$ref": "#/$defs/currency"
+        },
+        "failureCode": {
+          "type": "string"
+        },
+        "failureReason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "maskedMsisdn": {
+          "$ref": "#/$defs/maskedMsisdn"
+        }
       },
       "additionalProperties": false
     },
-
     "payment.transaction.manual_review_required": {
       "type": "object",
       "description": "La transaction n'a pas pu etre tranchee automatiquement. Un humain ou la reconciliation doit decider.",
-      "required": ["transactionId", "externalRef", "status", "reason"],
+      "required": [
+        "transactionId",
+        "externalRef",
+        "status",
+        "reason"
+      ],
       "properties": {
-        "transactionId": { "type": "string", "format": "uuid" },
-        "externalRef": { "type": "string" },
-        "status": { "type": "string" },
-        "reason": { "type": "string" }
+        "transactionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "externalRef": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "provider.disbursement.execute": {
+      "type": "object",
+      "required": [
+        "transactionId",
+        "providerCode",
+        "amount",
+        "currency",
+        "payeeMsisdn",
+        "externalRef",
+        "idempotencyKey"
+      ],
+      "properties": {
+        "transactionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "providerCode": {
+          "type": "string",
+          "enum": [
+            "MTN_MOMO",
+            "ORANGE_MONEY"
+          ]
+        },
+        "amount": {
+          "$ref": "#/$defs/amount"
+        },
+        "currency": {
+          "$ref": "#/$defs/currency"
+        },
+        "payeeMsisdn": {
+          "type": "string",
+          "pattern": "^\\+[0-9]{9,15}$",
+          "description": "Numero complet du beneficiaire. Necessaire ici, et uniquement ici, pour appeler l'operateur."
+        },
+        "externalRef": {
+          "type": "string"
+        },
+        "idempotencyKey": {
+          "type": "string",
+          "description": "Cle a transmettre a l'operateur. Une retentative apres timeout ne doit pas envoyer l'argent deux fois."
+        }
+      },
+      "additionalProperties": false
+    },
+    "payment.disbursement.requested": {
+      "type": "object",
+      "required": [
+        "transactionId",
+        "externalRef",
+        "amount",
+        "currency",
+        "platformFee",
+        "walletAccountRef",
+        "providerCode",
+        "reservationEntryRef"
+      ],
+      "properties": {
+        "transactionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "externalRef": {
+          "type": "string"
+        },
+        "amount": {
+          "$ref": "#/$defs/amount"
+        },
+        "currency": {
+          "$ref": "#/$defs/currency"
+        },
+        "platformFee": {
+          "$ref": "#/$defs/amount"
+        },
+        "walletAccountRef": {
+          "type": "string"
+        },
+        "providerCode": {
+          "type": "string",
+          "enum": [
+            "MTN_MOMO",
+            "ORANGE_MONEY"
+          ]
+        },
+        "reservationEntryRef": {
+          "type": "string",
+          "description": "Ecriture qui a engage les fonds vers le compte de passage. C'est elle que la compensation contre-passera."
+        },
+        "maskedMsisdn": {
+          "$ref": "#/$defs/maskedMsisdn"
+        }
+      },
+      "additionalProperties": false
+    },
+    "payment.disbursement.completed": {
+      "type": "object",
+      "required": [
+        "transactionId",
+        "externalRef",
+        "amount",
+        "currency",
+        "platformFee",
+        "providerFee",
+        "walletAccountRef",
+        "settlementEntryRef"
+      ],
+      "properties": {
+        "transactionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "externalRef": {
+          "type": "string"
+        },
+        "amount": {
+          "$ref": "#/$defs/amount"
+        },
+        "currency": {
+          "$ref": "#/$defs/currency"
+        },
+        "platformFee": {
+          "$ref": "#/$defs/amount"
+        },
+        "providerFee": {
+          "$ref": "#/$defs/amount"
+        },
+        "walletAccountRef": {
+          "type": "string"
+        },
+        "settlementEntryRef": {
+          "type": "string",
+          "description": "Ecriture de livraison : le compte de passage se solde vers le float operateur."
+        },
+        "maskedMsisdn": {
+          "$ref": "#/$defs/maskedMsisdn"
+        }
+      },
+      "additionalProperties": false
+    },
+    "payment.disbursement.reversed": {
+      "type": "object",
+      "required": [
+        "transactionId",
+        "externalRef",
+        "amount",
+        "currency",
+        "reservationEntryRef",
+        "reversalEntryRef",
+        "failureCode"
+      ],
+      "properties": {
+        "transactionId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "externalRef": {
+          "type": "string"
+        },
+        "amount": {
+          "$ref": "#/$defs/amount"
+        },
+        "currency": {
+          "$ref": "#/$defs/currency"
+        },
+        "walletAccountRef": {
+          "type": "string"
+        },
+        "reservationEntryRef": {
+          "type": "string",
+          "description": "Ecriture compensee."
+        },
+        "reversalEntryRef": {
+          "type": "string",
+          "description": "Ecriture de compensation. Le grand livre n'ayant jamais rien de modifie, l'annulation est elle-meme une ecriture."
+        },
+        "failureCode": {
+          "type": "string"
+        },
+        "failureReason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "maskedMsisdn": {
+          "$ref": "#/$defs/maskedMsisdn"
+        }
       },
       "additionalProperties": false
     }

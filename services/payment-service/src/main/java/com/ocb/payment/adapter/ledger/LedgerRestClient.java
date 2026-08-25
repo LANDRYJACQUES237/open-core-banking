@@ -75,6 +75,9 @@ public class LedgerRestClient implements LedgerPort {
         headers.set("Idempotency-Key", request.idempotencyKey());
 
         Map<String, Object> body = new LinkedHashMap<>();
+        if (request.entryRef() != null) {
+            body.put("entryRef", request.entryRef());
+        }
         body.put("transactionRef", request.transactionRef());
         body.put("description", request.description());
         body.put("lines", request.lines().stream().map(line -> Map.of(
@@ -108,6 +111,72 @@ public class LedgerRestClient implements LedgerPort {
         } catch (ResourceAccessException e) {
             // Timeout ou connexion impossible. L'ecriture a peut-etre eu lieu.
             throw new LedgerUnavailableException("Grand livre injoignable : impossible de conclure", e);
+        }
+    }
+
+    @Override
+    public com.ocb.platform.domain.money.Money balanceOf(String accountNumber) {
+        try {
+            ResponseEntity<JsonNode> response = restTemplate.exchange(
+                    baseUrl + "/v1/accounts/{account}/balance", HttpMethod.GET,
+                    new HttpEntity<>(new HttpHeaders()), JsonNode.class, accountNumber);
+
+            JsonNode payload = response.getBody();
+            if (payload == null || !payload.has("balance") || !payload.has("currency")) {
+                throw new IllegalStateException("Reponse de solde incomplete du grand livre");
+            }
+            // Le solde est lu comme une chaine, jamais comme un nombre JSON : asDouble()
+            // ou asDecimal() sur un noeud numerique passerait par un double des que la
+            // valeur depasse la precision exacte, et un solde faux ici autoriserait un
+            // decaissement qui ne devrait pas passer.
+            return com.ocb.platform.domain.money.Money.parse(
+                    payload.get("balance").asText(), payload.get("currency").asText());
+
+        } catch (HttpStatusCodeException e) {
+            if (e.getStatusCode().is5xxServerError()) {
+                throw new LedgerUnavailableException(
+                        "Le grand livre a repondu %s : solde inconnu".formatted(e.getStatusCode()), e);
+            }
+            throw refusal(e);
+
+        } catch (ResourceAccessException e) {
+            // Ne surtout pas retomber sur un solde nul : ce serait refuser des demandes
+            // parfaitement financables et faire passer une panne pour un manque d'argent.
+            throw new LedgerUnavailableException("Grand livre injoignable : solde inconnu", e);
+        }
+    }
+
+    @Override
+    public String reverse(ReversalRequest request) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.set("Idempotency-Key", request.idempotencyKey());
+
+        try {
+            ResponseEntity<JsonNode> response = restTemplate.exchange(
+                    baseUrl + "/v1/journal-entries/{entryRef}/reversal", HttpMethod.POST,
+                    new HttpEntity<>(Map.of("reason", request.reason()), headers),
+                    JsonNode.class, request.originalEntryRef());
+
+            JsonNode payload = response.getBody();
+            if (payload == null || !payload.has("entryRef")) {
+                throw new IllegalStateException("Reponse de contre-passation sans entryRef");
+            }
+            // 201 a la creation, 200 sur rejeu de la meme cle : les deux disent que la
+            // compensation existe, ce qui est tout ce que l'appelant a besoin de savoir.
+            return payload.get("entryRef").asText();
+
+        } catch (HttpStatusCodeException e) {
+            if (e.getStatusCode().is5xxServerError()) {
+                throw new LedgerUnavailableException(
+                        "Le grand livre a repondu %s : compensation incertaine"
+                                .formatted(e.getStatusCode()), e);
+            }
+            throw refusal(e);
+
+        } catch (ResourceAccessException e) {
+            throw new LedgerUnavailableException(
+                    "Grand livre injoignable : compensation incertaine", e);
         }
     }
 

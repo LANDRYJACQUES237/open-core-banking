@@ -2,6 +2,7 @@ package com.ocb.provider.adapter.operator;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.ocb.platform.domain.money.Money;
+import com.ocb.provider.domain.OperationType;
 import com.ocb.provider.domain.ProviderCode;
 import com.ocb.provider.domain.port.ProviderClient;
 import org.slf4j.Logger;
@@ -79,13 +80,40 @@ public class HttpProviderClient implements ProviderClient {
     }
 
     @Override
-    public ProviderStatus pollStatus(ProviderCode providerCode, String externalRef, String providerRef) {
+    public ProviderStatus initiateDisbursement(DisbursementRequest request) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("externalRef", request.externalRef());
+        body.put("amount", request.amount().toPlainString());
+        body.put("currency", request.amount().currencyCode());
+        body.put("payeeMsisdn", request.payeeMsisdn());
+        body.put("callbackUrl", request.callbackUrl());
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        // Encore plus critique que pour un encaissement : sans cette cle, une retentative
+        // apres delai depasse enverrait l'argent une seconde fois.
+        headers.set("Idempotency-Key", request.idempotencyKey());
+
+        String url = endpoints.baseUrlFor(request.providerCode()) + "/disbursements";
+        return call(request.providerCode(), () ->
+                restTemplate.exchange(url, HttpMethod.POST, new HttpEntity<>(body, headers), JsonNode.class));
+    }
+
+    @Override
+    public ProviderStatus pollStatus(ProviderCode providerCode, OperationType type,
+                                     String externalRef, String providerRef) {
         // Interrogation par NOTRE reference, pas par celle de l'operateur : quand l'appel
         // initial a expire, aucune reference operateur n'a jamais ete recue, et c'est
         // precisement dans ce cas qu'il faut pouvoir demander.
-        String url = endpoints.baseUrlFor(providerCode) + "/collections/" + externalRef + "/status";
+        String url = endpoints.baseUrlFor(providerCode)
+                + resourceOf(type) + "/" + externalRef + "/status";
         return call(providerCode, () ->
                 restTemplate.exchange(url, HttpMethod.GET, HttpEntity.EMPTY, JsonNode.class));
+    }
+
+    /** Chaque sens a son point d'entree chez l'operateur, y compris pour la relance. */
+    private static String resourceOf(OperationType type) {
+        return type == OperationType.DISBURSEMENT ? "/disbursements" : "/collections";
     }
 
     private ProviderStatus call(ProviderCode providerCode, Call call) {

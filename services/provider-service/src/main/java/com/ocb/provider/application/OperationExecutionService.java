@@ -20,7 +20,17 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Emission d'une demande d'encaissement vers un operateur.
+ * Emission d'une demande vers un operateur, dans un sens ou dans l'autre.
+ *
+ * <p>Un seul service pour l'encaissement et le decaissement, parce que tout ce qui est
+ * difficile ici leur est commun : la doctrine du silence, la deduplication des commandes
+ * rejouees, la programmation des relances, la publication des issues. Seuls changent le
+ * point d'entree appele chez l'operateur et le sens de l'argent.
+ *
+ * <p>Le sens change en revanche ce que <b>coute</b> une erreur. Sur un encaissement,
+ * conclure a tort a l'echec laisse un client debite sans contrepartie. Sur un
+ * decaissement, cela declenche une compensation qui rembourse un beneficiaire peut-etre
+ * deja paye — l'argent sort deux fois.
  *
  * <p>Trois issues, et la troisieme est celle qui compte.
  *
@@ -35,9 +45,9 @@ import java.util.UUID;
  * </ol>
  */
 @Service
-public class CollectionExecutionService {
+public class OperationExecutionService {
 
-    private static final Logger log = LoggerFactory.getLogger(CollectionExecutionService.class);
+    private static final Logger log = LoggerFactory.getLogger(OperationExecutionService.class);
 
     private final OperationStore operations;
     private final ProviderClient providerClient;
@@ -46,12 +56,12 @@ public class CollectionExecutionService {
     private final PollSchedule schedule;
     private final String callbackBaseUrl;
 
-    public CollectionExecutionService(OperationStore operations,
-                                      ProviderClient providerClient,
-                                      OperationEventPublisher events,
-                                      AuditStore audit,
-                                      @Value("${ocb.provider.poll.budget:PT24H}") java.time.Duration budget,
-                                      @Value("${ocb.provider.callback-base-url}") String callbackBaseUrl) {
+    public OperationExecutionService(OperationStore operations,
+                                     ProviderClient providerClient,
+                                     OperationEventPublisher events,
+                                     AuditStore audit,
+                                     @Value("${ocb.provider.poll.budget:PT24H}") java.time.Duration budget,
+                                     @Value("${ocb.provider.callback-base-url}") String callbackBaseUrl) {
         this.operations = operations;
         this.providerClient = providerClient;
         this.events = events;
@@ -63,17 +73,18 @@ public class CollectionExecutionService {
     @Transactional
     public void execute(UUID transactionId,
                         ProviderCode providerCode,
+                        OperationType type,
                         String externalRef,
                         String idempotencyKey,
                         Money amount,
-                        String payerMsisdn,
+                        String msisdn,
                         String correlationId) {
 
         Instant now = Instant.now();
 
         OperationStore.Created created = operations.createOrGet(new ProviderOperation(
-                UUID.randomUUID(), transactionId, providerCode, OperationType.COLLECTION,
-                externalRef, idempotencyKey, payerMsisdn, amount,
+                UUID.randomUUID(), transactionId, providerCode, type,
+                externalRef, idempotencyKey, msisdn, amount,
                 null, OperationStatus.PENDING, null, null, null, null,
                 0, 0, null, schedule.nextPollAt(now, 0, now).orElse(null), false,
                 now, now, 0));
@@ -90,9 +101,12 @@ public class CollectionExecutionService {
 
         ProviderClient.ProviderStatus status;
         try {
-            status = providerClient.initiateCollection(new ProviderClient.CollectionRequest(
-                    providerCode, externalRef, idempotencyKey, amount, payerMsisdn,
-                    callbackBaseUrl + "/webhooks/" + providerCode.name()));
+            String callbackUrl = callbackBaseUrl + "/webhooks/" + providerCode.name();
+            status = type == OperationType.DISBURSEMENT
+                    ? providerClient.initiateDisbursement(new ProviderClient.DisbursementRequest(
+                            providerCode, externalRef, idempotencyKey, amount, msisdn, callbackUrl))
+                    : providerClient.initiateCollection(new ProviderClient.CollectionRequest(
+                            providerCode, externalRef, idempotencyKey, amount, msisdn, callbackUrl));
         } catch (ProviderClient.ProviderUnavailableException e) {
             // Le point le plus important du service. On ne conclut pas, on programme une
             // relance et on se tait. Le moteur de paiement laissera sa transaction en

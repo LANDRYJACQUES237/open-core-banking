@@ -47,6 +47,29 @@ public final class RequestFingerprint {
                 payer.masked()));
     }
 
+    /**
+     * Empreinte d'un decaissement.
+     *
+     * <p>Le sens de l'operation entre dans l'empreinte via le prefixe. Sans lui, un
+     * encaissement et un decaissement de memes montant, portefeuille et destinataire
+     * produiraient la meme empreinte : rejouer une cle d'idempotence d'un sens sur l'autre
+     * passerait pour un rejeu legitime, et rendrait la transaction inverse.
+     */
+    public static String ofDisbursement(String externalRef,
+                                        Money amount,
+                                        String walletAccountRef,
+                                        String providerCode,
+                                        Msisdn payee) {
+        return sha256(String.join("|",
+                "DISBURSEMENT",
+                nullSafe(externalRef),
+                amount.toPlainString(),
+                amount.currencyCode(),
+                nullSafe(walletAccountRef),
+                nullSafe(providerCode),
+                payee.masked()));
+    }
+
     private static String nullSafe(String value) {
         return value == null ? "" : value;
     }

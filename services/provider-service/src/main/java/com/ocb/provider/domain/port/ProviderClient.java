@@ -1,6 +1,7 @@
 package com.ocb.provider.domain.port;
 
 import com.ocb.platform.domain.money.Money;
+import com.ocb.provider.domain.OperationType;
 import com.ocb.provider.domain.ProviderCode;
 
 /**
@@ -37,6 +38,22 @@ public interface ProviderClient {
     ProviderStatus initiateCollection(CollectionRequest request);
 
     /**
+     * Emet un ordre de decaissement.
+     *
+     * <p>Methode distincte de l'encaissement plutot qu'un parametre de sens : les deux
+     * appellent des points d'entree differents chez l'operateur, et surtout un decaissement
+     * emis par erreur a la place d'un encaissement enverrait de l'argent au lieu d'en
+     * demander. Le type rend la confusion impossible.
+     *
+     * <p>La doctrine du silence est en revanche exactement la meme, et elle est ici encore
+     * plus couteuse a enfreindre : conclure a l'echec sur un delai depasse ferait rembourser
+     * un beneficiaire peut-etre deja paye.
+     *
+     * @throws ProviderUnavailableException si l'operateur ne repond pas
+     */
+    ProviderStatus initiateDisbursement(DisbursementRequest request);
+
+    /**
      * Demande le statut d'une operation.
      *
      * <p>Interrogeable par notre propre reference autant que par celle de l'operateur :
@@ -45,7 +62,8 @@ public interface ProviderClient {
      *
      * @throws ProviderUnavailableException si l'operateur ne repond pas
      */
-    ProviderStatus pollStatus(ProviderCode providerCode, String externalRef, String providerRef);
+    ProviderStatus pollStatus(ProviderCode providerCode, OperationType type,
+                              String externalRef, String providerRef);
 
     record CollectionRequest(ProviderCode providerCode,
                              String externalRef,
@@ -53,6 +71,14 @@ public interface ProviderClient {
                              Money amount,
                              String payerMsisdn,
                              String callbackUrl) {
+    }
+
+    record DisbursementRequest(ProviderCode providerCode,
+                               String externalRef,
+                               String idempotencyKey,
+                               Money amount,
+                               String payeeMsisdn,
+                               String callbackUrl) {
     }
 
     record ProviderStatus(Outcome outcome,

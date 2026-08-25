@@ -15,6 +15,14 @@ public final class PaymentErrors {
     public static final String IDEMPOTENT_REQUEST_IN_PROGRESS = "PAYMENT_REQUEST_IN_PROGRESS";
 
     public static final String INVALID_AMOUNT = "PAYMENT_INVALID_AMOUNT";
+
+    /**
+     * Le portefeuille ne couvre pas le montant augmente des frais.
+     *
+     * <p>Un refus, pas un incident : rien n'a ete ecrit, rien n'a ete engage, et l'appelant
+     * peut recommencer avec un montant moindre.
+     */
+    public static final String INSUFFICIENT_FUNDS = "PAYMENT_INSUFFICIENT_FUNDS";
     public static final String UNSUPPORTED_PROVIDER = "PAYMENT_UNSUPPORTED_PROVIDER";
 
     /** Le grand livre a refuse l'ecriture. */

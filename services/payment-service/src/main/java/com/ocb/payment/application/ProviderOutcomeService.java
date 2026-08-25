@@ -1,6 +1,9 @@
 package com.ocb.payment.application;
 
+import com.ocb.payment.domain.DisbursementEntryRefs;
+import com.ocb.payment.domain.LedgerAccounts;
 import com.ocb.payment.domain.PaymentTransaction;
+import com.ocb.payment.domain.TransactionType;
 import com.ocb.payment.domain.TransactionStatus;
 import com.ocb.payment.domain.TransactionUpdate;
 import com.ocb.payment.domain.port.AuditStore;
@@ -46,11 +49,6 @@ public class ProviderOutcomeService {
 
     private static final Logger log = LoggerFactory.getLogger(ProviderOutcomeService.class);
     private static final String PRODUCER = "payment-service";
-
-    /** Compte de produits : nos commissions. */
-    private static final String FEE_INCOME_ACCOUNT = "4100";
-    /** Compte de charges : la commission prelevee par l'operateur. */
-    private static final String PROVIDER_COST_ACCOUNT = "5100";
 
     private final TransactionStateService stateService;
     private final LedgerPort ledger;
@@ -100,9 +98,12 @@ public class ProviderOutcomeService {
         }
 
         PaymentTransaction transaction = posting.transaction();
+        boolean disbursement = transaction.type() == TransactionType.DISBURSEMENT;
         String entryRef;
         try {
-            entryRef = ledger.post(collectionEntry(transaction));
+            entryRef = ledger.post(disbursement
+                    ? settlementEntry(transaction, providerFee)
+                    : collectionEntry(transaction));
         } catch (LedgerPort.LedgerUnavailableException e) {
             // On ne conclut pas. En laissant remonter, la transaction locale est annulee,
             // le message sera redelivre, et la cle d'idempotence rendra la retentative
@@ -122,16 +123,26 @@ public class ProviderOutcomeService {
                 "LEDGER_ENTRY_POSTED", TransactionUpdate.posted(entryRef));
 
         PaymentTransaction settled = completed.transaction();
-        outbox.append(Topics.EVT_PAYMENT, transactionId.toString(), EventEnvelope.of(
-                EventTypes.PAYMENT_COLLECTION_COMPLETED, "PaymentTransaction",
-                transactionId.toString(), correlationId, null, PRODUCER,
-                new Payloads.PaymentCollectionCompleted(
+        Object payload = disbursement
+                ? new Payloads.PaymentDisbursementCompleted(
                         transactionId.toString(), settled.externalRef(),
                         settled.amount().toPlainString(), settled.amount().currencyCode(),
                         settled.platformFee().toPlainString(), providerFee.toPlainString(),
-                        settled.walletAccountRef(), entryRef, settled.maskedMsisdn())));
+                        settled.walletAccountRef(), entryRef, settled.maskedMsisdn())
+                : new Payloads.PaymentCollectionCompleted(
+                        transactionId.toString(), settled.externalRef(),
+                        settled.amount().toPlainString(), settled.amount().currencyCode(),
+                        settled.platformFee().toPlainString(), providerFee.toPlainString(),
+                        settled.walletAccountRef(), entryRef, settled.maskedMsisdn());
 
-        audit.append("COLLECTION_COMPLETED", "PaymentTransaction", transactionId.toString(),
+        outbox.append(Topics.EVT_PAYMENT, transactionId.toString(), EventEnvelope.of(
+                disbursement ? EventTypes.PAYMENT_DISBURSEMENT_COMPLETED
+                        : EventTypes.PAYMENT_COLLECTION_COMPLETED,
+                "PaymentTransaction", transactionId.toString(), correlationId, null, PRODUCER,
+                payload));
+
+        audit.append(disbursement ? "DISBURSEMENT_COMPLETED" : "COLLECTION_COMPLETED",
+                "PaymentTransaction", transactionId.toString(),
                 correlationId, Map.of("ledgerEntryRef", entryRef,
                         "providerFee", providerFee.toPlainString()));
     }
@@ -149,10 +160,15 @@ public class ProviderOutcomeService {
             return;
         }
 
-        // Un encaissement refuse n'a rien engage : aucune ecriture n'a ete passee, il n'y
-        // a donc rien a compenser. Le decaissement, lui, aura debite le portefeuille avant
-        // d'appeler l'operateur et devra passer par COMPENSATING — c'est la saga de la
-        // Phase 4.
+        // C'est ici que les deux sens divergent vraiment. Un encaissement refuse n'a rien
+        // engage : aucune ecriture n'a ete passee, il echoue directement. Un decaissement
+        // refuse a deja debite le portefeuille du client avant meme d'appeler l'operateur ;
+        // le laisser echouer abandonnerait l'argent du client en compte de passage.
+        if (declined.transaction().type() == TransactionType.DISBURSEMENT) {
+            compensate(declined.transaction(), event, correlationId);
+            return;
+        }
+
         TransactionStateService.Applied failed = stateService.apply(
                 transactionId, TransactionStatus.FAILED,
                 "COLLECTION_FAILED", TransactionUpdate.none());
@@ -181,6 +197,115 @@ public class ProviderOutcomeService {
                     "budget de polling epuise apres %d tentatives".formatted(event.pollAttempts()),
                     correlationId);
         }
+    }
+
+    /**
+     * Compensation : rendre au client des fonds deja engages.
+     *
+     * <p>C'est la seule etape de la plateforme qui defait un mouvement d'argent, et elle le
+     * fait par <b>ajout</b>. Le grand livre etant immuable, l'ecriture d'engagement n'est
+     * ni modifiee ni supprimee : une ecriture de sens inverse la designe, et les deux
+     * restent visibles sur le releve du client. C'est voulu — un remboursement est un
+     * fait, pas l'effacement d'un fait.
+     *
+     * <p>La contre-passation rend aussi nos frais de plateforme, puisqu'elle inverse les
+     * trois lignes de l'engagement. Facturer la prise en charge d'un ordre que l'operateur
+     * a refuse serait indefendable.
+     */
+    private void compensate(PaymentTransaction transaction,
+                            Payloads.ProviderOperationFailed event,
+                            String correlationId) {
+        UUID transactionId = transaction.id();
+
+        TransactionStateService.Applied compensating = stateService.apply(
+                transactionId, TransactionStatus.COMPENSATING,
+                "DISBURSEMENT_DECLINED",
+                TransactionUpdate.failed(event.errorCode(), event.errorMessage()));
+        if (!compensating.accepted()) {
+            return;
+        }
+
+        String reversalRef;
+        try {
+            reversalRef = ledger.reverse(new LedgerPort.ReversalRequest(
+                    // Derivee, pas retrouvee : la compensation n'a rien a relire pour
+                    // savoir quelle ecriture defaire.
+                    DisbursementEntryRefs.reservation(transactionId),
+                    "disbursement-reversal:" + transactionId,
+                    "Decaissement refuse par l'operateur (%s)".formatted(event.errorCode())));
+
+        } catch (LedgerPort.LedgerUnavailableException e) {
+            // On ne conclut pas. En laissant remonter, toute la transaction locale est
+            // annulee — y compris le passage en COMPENSATING — et le message sera
+            // redelivre depuis un etat coherent. La cle d'idempotence rendra la
+            // retentative inoffensive meme si la contre-passation avait en realite abouti.
+            log.warn("Grand livre injoignable pour compenser {} : retentative par redelivrance",
+                    transactionId);
+            throw e;
+
+        } catch (InvariantViolationException e) {
+            // Le grand livre refuse de contre-passer. L'argent du client est immobilise en
+            // compte de passage et aucune regle automatique ne peut le liberer : c'est
+            // exactement le cas ou un humain doit trancher.
+            log.error("Compensation refusee par le grand livre pour {} : {}",
+                    transactionId, e.getMessage());
+            toManualReview(compensating.transaction(),
+                    "compensation refusee par le grand livre : " + e.code(), correlationId);
+            return;
+        }
+
+        TransactionStateService.Applied reversed = stateService.apply(
+                transactionId, TransactionStatus.REVERSED,
+                "DISBURSEMENT_REVERSED", TransactionUpdate.posted(reversalRef));
+        if (!reversed.accepted()) {
+            return;
+        }
+
+        PaymentTransaction t = reversed.transaction();
+        outbox.append(Topics.EVT_PAYMENT, transactionId.toString(), EventEnvelope.of(
+                EventTypes.PAYMENT_DISBURSEMENT_REVERSED, "PaymentTransaction",
+                transactionId.toString(), correlationId, null, PRODUCER,
+                new Payloads.PaymentDisbursementReversed(
+                        transactionId.toString(), t.externalRef(),
+                        t.amount().toPlainString(), t.amount().currencyCode(),
+                        t.walletAccountRef(),
+                        DisbursementEntryRefs.reservation(transactionId), reversalRef,
+                        event.errorCode(), event.errorMessage(), t.maskedMsisdn())));
+
+        audit.append("DISBURSEMENT_REVERSED", "PaymentTransaction", transactionId.toString(),
+                correlationId, Map.of(
+                        "reservationEntryRef", DisbursementEntryRefs.reservation(transactionId),
+                        "reversalEntryRef", reversalRef,
+                        "failureCode", event.errorCode()));
+    }
+
+    /**
+     * Etape 2 du decaissement : livraison.
+     *
+     * <p>L'operateur a paye le beneficiaire depuis notre float et y a preleve sa
+     * commission. Le compte de passage se solde donc, et notre float diminue du montant
+     * livre augmente de cette commission :
+     *
+     * <pre>
+     *   DR  compte de passage      montant
+     *   DR  charges commission     commission operateur
+     *   CR  float operateur        montant + commission operateur
+     * </pre>
+     *
+     * <p>Une fois cette ecriture passee, plus rien ne stationne en compte de passage pour
+     * cette transaction — ce qui est la definition meme d'une saga terminee.
+     */
+    private LedgerPort.EntryRequest settlementEntry(PaymentTransaction t, Money providerFee) {
+        return new LedgerPort.EntryRequest(
+                "disbursement-settlement:" + t.id(),
+                DisbursementEntryRefs.settlement(t.id()),
+                t.externalRef(),
+                "Livraison decaissement %s %s".formatted(t.amount().toPlainString(), t.providerCode()),
+                List.of(
+                        LedgerPort.Line.debit(LedgerAccounts.DISBURSEMENT_SUSPENSE, t.amount()),
+                        LedgerPort.Line.debit(LedgerAccounts.PROVIDER_COST, providerFee),
+                        LedgerPort.Line.credit(t.providerCode().floatAccount(),
+                                t.amount().add(providerFee))));
     }
 
     private void toManualReview(PaymentTransaction transaction, String reason, String correlationId) {
@@ -227,12 +352,13 @@ public class ProviderOutcomeService {
                 // retentative a l'autre : c'est elle qui rend l'appel au grand livre sur
                 // meme apres un arret entre l'appel et la validation locale.
                 "collection:" + t.id(),
+                null,
                 t.externalRef(),
                 "Encaissement %s %s".formatted(t.amount().toPlainString(), t.providerCode()),
                 List.of(
                         LedgerPort.Line.debit(t.providerCode().floatAccount(), t.floatCredit()),
-                        LedgerPort.Line.debit(PROVIDER_COST_ACCOUNT, t.providerFee()),
+                        LedgerPort.Line.debit(LedgerAccounts.PROVIDER_COST, t.providerFee()),
                         LedgerPort.Line.credit(t.walletAccountRef(), t.walletCredit()),
-                        LedgerPort.Line.credit(FEE_INCOME_ACCOUNT, t.platformFee())));
+                        LedgerPort.Line.credit(LedgerAccounts.FEE_INCOME, t.platformFee())));
     }
 }

@@ -9,8 +9,6 @@ import com.ocb.payment.domain.ProviderCode;
 import com.ocb.platform.web.CorrelationIdFilter;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -35,7 +33,7 @@ public class CollectionsController implements CollectionsApi {
                 request.getWalletAccountRef(),
                 ProviderCode.valueOf(request.getProviderCode().getValue()),
                 idempotencyKey,
-                callerId(),
+                CallerIdentity.current(),
                 CorrelationIdFilter.current()));
 
         // 202 et non 200 : la demande est prise en charge, elle n'est pas terminee.
@@ -44,30 +42,5 @@ public class CollectionsController implements CollectionsApi {
         return ResponseEntity
                 .status(result.created() ? HttpStatus.ACCEPTED : HttpStatus.OK)
                 .body(mapper.toApi(result.transaction()));
-    }
-
-    /**
-     * Portee des cles d'idempotence : le sujet du jeton.
-     *
-     * <p>Deux clients qui choisissent la meme cle — ce qui arrive des qu'un client utilise
-     * des compteurs plutot que des identifiants aleatoires — ne doivent pas se voler
-     * mutuellement leurs reponses. Le second recevrait la transaction du premier et
-     * croirait sa demande prise en charge alors qu'elle aurait ete ignoree.
-     *
-     * <p>L'identite vient du jeton verifie, jamais d'un en-tete fourni par l'appelant : ce
-     * dernier pourrait se declarer n'importe qui et lire les transactions d'un autre
-     * marchand par simple collision de cle.
-     */
-    private String callerId() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || authentication.getName() == null) {
-            // La chaine de securite refuse deja les requetes non authentifiees. Si on
-            // arrive ici, c'est qu'une regle a ete relachee par erreur : mieux vaut
-            // echouer que d'agreger silencieusement tous les appelants sous une meme
-            // portee.
-            throw new IllegalStateException(
-                    "Aucune identite authentifiee : la portee d'idempotence serait partagee");
-        }
-        return authentication.getName();
     }
 }

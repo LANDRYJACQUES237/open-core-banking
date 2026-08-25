@@ -3,8 +3,9 @@ package com.ocb.provider;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.client.WireMock;
 import com.ocb.platform.domain.money.Money;
-import com.ocb.provider.application.CollectionExecutionService;
+import com.ocb.provider.application.OperationExecutionService;
 import com.ocb.provider.application.ReconciliationPoller;
+import com.ocb.provider.domain.OperationType;
 import com.ocb.provider.domain.ProviderCode;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -76,7 +77,7 @@ public abstract class ProviderOperatorTestBase {
     }
 
     @Autowired
-    protected CollectionExecutionService collections;
+    protected OperationExecutionService operations;
 
     @Autowired
     protected ReconciliationPoller poller;
@@ -144,8 +145,17 @@ public abstract class ProviderOperatorTestBase {
 
     protected UUID requestCollection() {
         UUID transactionId = UUID.randomUUID();
-        collections.execute(transactionId, ProviderCode.MTN_MOMO, "TX-" + suffix,
-                "collection:" + transactionId, Money.parse("10000", "XAF"),
+        operations.execute(transactionId, ProviderCode.MTN_MOMO, OperationType.COLLECTION,
+                "TX-" + suffix, "collection:" + transactionId, Money.parse("10000", "XAF"),
+                "+237670000001", "corr-" + suffix);
+        return transactionId;
+    }
+
+    /** Meme socle, sens inverse : l'argent sort au lieu d'entrer. */
+    protected UUID requestDisbursement() {
+        UUID transactionId = UUID.randomUUID();
+        operations.execute(transactionId, ProviderCode.MTN_MOMO, OperationType.DISBURSEMENT,
+                "TX-" + suffix, "disbursement:" + transactionId, Money.parse("5000", "XAF"),
                 "+237670000001", "corr-" + suffix);
         return transactionId;
     }

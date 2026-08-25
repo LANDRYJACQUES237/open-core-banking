@@ -40,6 +40,30 @@ public final class Payloads {
     ) {
     }
 
+    /**
+     * Ordre de decaissement adresse a l'operateur.
+     *
+     * <p>La difference de fond avec {@link ProviderCollectionExecute} n'est pas dans les
+     * champs mais dans ce qui a deja eu lieu : quand ce message part, le portefeuille du
+     * client est <b>deja debite</b>. Un echec ne peut donc plus se traduire par un simple
+     * abandon.
+     *
+     * @param payeeMsisdn    numero complet du beneficiaire. Comme pour l'encaissement,
+     *                       c'est le seul message ou il circule en clair
+     * @param idempotencyKey cle transmise a l'operateur : une retentative apres timeout ne
+     *                       doit pas envoyer l'argent une seconde fois
+     */
+    public record ProviderDisbursementExecute(
+            String transactionId,
+            String providerCode,
+            String amount,
+            String currency,
+            String payeeMsisdn,
+            String externalRef,
+            String idempotencyKey
+    ) {
+    }
+
     // --- Issues d'operations operateur -----------------------------------------------
 
     /** L'operateur a accepte la demande. Le resultat reste inconnu a ce stade. */
@@ -137,6 +161,68 @@ public final class Payloads {
             String externalRef,
             String amount,
             String currency,
+            String failureCode,
+            String failureReason,
+            String maskedMsisdn
+    ) {
+    }
+
+    /**
+     * Fonds engages, ordre parti.
+     *
+     * @param reservationEntryRef ecriture qui a debite le portefeuille vers le compte de
+     *                            passage. Elle est publiee des maintenant parce que c'est
+     *                            elle que la compensation contre-passera
+     */
+    public record PaymentDisbursementRequested(
+            String transactionId,
+            String externalRef,
+            String amount,
+            String currency,
+            String platformFee,
+            String walletAccountRef,
+            String providerCode,
+            String reservationEntryRef,
+            String maskedMsisdn
+    ) {
+    }
+
+    /**
+     * Decaissement livre.
+     *
+     * @param settlementEntryRef ecriture de livraison : le compte de passage se solde vers
+     *                           le float operateur. Plus rien ne stationne en 1900 pour
+     *                           cette transaction
+     */
+    public record PaymentDisbursementCompleted(
+            String transactionId,
+            String externalRef,
+            String amount,
+            String currency,
+            String platformFee,
+            String providerFee,
+            String walletAccountRef,
+            String settlementEntryRef,
+            String maskedMsisdn
+    ) {
+    }
+
+    /**
+     * Decaissement compense : le client a ete rembourse.
+     *
+     * <p>L'ecriture d'origine n'est ni modifiee ni supprimee — le grand livre est
+     * immuable. La compensation est une ecriture supplementaire, de sens inverse, et les
+     * deux reste visibles sur le releve du client. C'est voulu : un remboursement est un
+     * fait, pas l'effacement d'un fait.
+     */
+    public record PaymentDisbursementReversed(
+            String transactionId,
+            String externalRef,
+            String amount,
+            String currency,
+            String walletAccountRef,
+            String reservationEntryRef,
+            String reversalEntryRef,
             String failureCode,
             String failureReason,
             String maskedMsisdn

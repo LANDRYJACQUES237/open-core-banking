@@ -112,7 +112,8 @@ public class ReconciliationPoller {
         ProviderClient.ProviderStatus status;
         try {
             status = providerClient.pollStatus(
-                    operation.providerCode(), operation.externalRef(), operation.providerRef());
+                    operation.providerCode(), operation.type(),
+                    operation.externalRef(), operation.providerRef());
         } catch (ProviderClient.ProviderUnavailableException e) {
             // Toujours pas de reponse. On consomme du budget, on ne conclut rien.
             rescheduleOrExhaust(operation, attempts, now, e.getMessage());

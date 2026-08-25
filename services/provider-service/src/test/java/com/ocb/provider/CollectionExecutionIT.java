@@ -181,10 +181,10 @@ class CollectionExecutionIT extends ProviderOperatorTestBase {
         com.ocb.platform.domain.money.Money amount =
                 com.ocb.platform.domain.money.Money.parse("10000", "XAF");
 
-        collections.execute(transactionId, mtn, externalRef, "collection:" + transactionId,
-                amount, "+237670000001", "corr-1");
-        collections.execute(transactionId, mtn, externalRef, "collection:" + transactionId,
-                amount, "+237670000001", "corr-1");
+        operations.execute(transactionId, mtn, com.ocb.provider.domain.OperationType.COLLECTION,
+                externalRef, "collection:" + transactionId, amount, "+237670000001", "corr-1");
+        operations.execute(transactionId, mtn, com.ocb.provider.domain.OperationType.COLLECTION,
+                externalRef, "collection:" + transactionId, amount, "+237670000001", "corr-1");
 
         // Un seul appel sortant. La contrainte d'unicite sur (operateur, transaction) est
         // le garde-fou ultime contre le double prelevement : elle tient meme si la

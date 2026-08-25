@@ -67,6 +67,52 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/UnprocessableEntity' }
 
+  /v1/disbursements:
+    post:
+      tags: [disbursements]
+      operationId: requestDisbursement
+      summary: Demande un decaissement
+      description: |
+        Engage les fonds du portefeuille vers le compte de passage, puis emet l'ordre
+        destine a l'operateur. Contrairement a un encaissement, l'ecriture comptable
+        precede l'appel a l'operateur — on ne peut pas envoyer de l'argent qui n'a pas
+        ete preleve. C'est cette inversion qui rend une saga necessaire.
+
+        Le solde du portefeuille est verifie avant l'engagement, sous verrou, de sorte que
+        deux demandes simultanees sur un meme portefeuille ne puissent pas se croire
+        toutes deux finançables.
+
+        Rejouer la requete avec la meme cle d'idempotence retourne la transaction
+        existante avec un `200`, sans engager les fonds une seconde fois.
+
+        Un portefeuille qui ne couvre pas le montant augmente des frais fait echouer la
+        demande en `422` avec le code `PAYMENT_INSUFFICIENT_FUNDS`, sans qu'aucune
+        ecriture ne soit passee ni aucun ordre emis.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DisbursementRequest'
+      responses:
+        '202':
+          description: Fonds engages, ordre emis
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '200':
+          description: Requete rejouee, transaction deja enregistree
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+
   /v1/transactions/{transactionId}:
     get:
       tags: [transactions]
@@ -200,6 +246,34 @@ components:
           type: string
           maxLength: 100
           description: Compte du grand livre a crediter.
+          example: "2100.wallet-c"
+        providerCode:
+          $ref: '#/components/schemas/ProviderCode'
+
+    DisbursementRequest:
+      type: object
+      required: [externalRef, amount, currency, payeeMsisdn, walletAccountRef, providerCode]
+      properties:
+        externalRef:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Reference de l'appelant, pour rapprochement de son cote.
+        amount:
+          $ref: '#/components/schemas/Amount'
+        currency:
+          $ref: '#/components/schemas/Currency'
+        payeeMsisdn:
+          type: string
+          pattern: '^\+[0-9]{9,15}$'
+          description: |
+            Numero du beneficiaire, au format international. Comme pour un encaissement,
+            il n'est **pas conserve en clair** : seule sa forme masquee est stockee.
+          example: "+237670000001"
+        walletAccountRef:
+          type: string
+          maxLength: 100
+          description: Compte du grand livre a debiter.
           example: "2100.wallet-c"
         providerCode:
           $ref: '#/components/schemas/ProviderCode'

@@ -37,6 +37,14 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/v1/collections")
                         .hasAuthority(OcbScopes.authority(OcbScopes.PAYMENT_INITIATE))
 
+                        // Meme portee que l'encaissement : dans les deux cas le marchand
+                        // demande un mouvement d'argent sur un portefeuille qu'il gere.
+                        // Ce qui distingue le decaissement n'est pas qui a le droit de le
+                        // demander, mais ce qu'il engage — et cela releve du solde, pas de
+                        // l'autorisation.
+                        .requestMatchers(HttpMethod.POST, "/v1/disbursements")
+                        .hasAuthority(OcbScopes.authority(OcbScopes.PAYMENT_INITIATE))
+
                         .requestMatchers(HttpMethod.GET, "/v1/transactions/**")
                         .hasAuthority(OcbScopes.authority(OcbScopes.PAYMENT_READ))
 

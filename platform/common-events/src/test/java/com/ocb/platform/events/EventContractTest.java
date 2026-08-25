@@ -46,50 +46,60 @@ class EventContractTest {
             JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V202012);
 
     /** Un exemple realiste par type. C'est ce qui est confronte au schema. */
-    private static final Map<String, Object> SAMPLES = Map.of(
-            EventTypes.PROVIDER_COLLECTION_EXECUTE,
+    private static final Map<String, Object> SAMPLES = Map.ofEntries(
+            Map.entry(EventTypes.PROVIDER_COLLECTION_EXECUTE,
             new Payloads.ProviderCollectionExecute(
                     "0f4d3d7e-1c9a-4a2b-9f3e-2b7c1d5e6a8f", "MTN_MOMO", "10000", "XAF",
-                    "+237670000001", "TX-001", "idem-001"),
-
-            EventTypes.PROVIDER_OPERATION_ACCEPTED,
+                    "+237670000001", "TX-001", "idem-001")),
+            Map.entry(EventTypes.PROVIDER_OPERATION_ACCEPTED,
             new Payloads.ProviderOperationAccepted(
-                    "0f4d3d7e-1c9a-4a2b-9f3e-2b7c1d5e6a8f", "MTN_MOMO", "MTN-REF-1", Instant.now()),
-
-            EventTypes.PROVIDER_OPERATION_SUCCEEDED,
+                    "0f4d3d7e-1c9a-4a2b-9f3e-2b7c1d5e6a8f", "MTN_MOMO", "MTN-REF-1", Instant.now())),
+            Map.entry(EventTypes.PROVIDER_OPERATION_SUCCEEDED,
             new Payloads.ProviderOperationSucceeded(
                     "0f4d3d7e-1c9a-4a2b-9f3e-2b7c1d5e6a8f", "MTN_MOMO", "MTN-REF-1",
-                    "150", "XAF", Instant.now(), "CALLBACK"),
-
-            EventTypes.PROVIDER_OPERATION_FAILED,
+                    "150", "XAF", Instant.now(), "CALLBACK")),
+            Map.entry(EventTypes.PROVIDER_OPERATION_FAILED,
             new Payloads.ProviderOperationFailed(
                     "0f4d3d7e-1c9a-4a2b-9f3e-2b7c1d5e6a8f", "MTN_MOMO", null,
-                    "INSUFFICIENT_FUNDS", "Solde insuffisant", "POLL"),
-
-            EventTypes.PROVIDER_OPERATION_UNRESOLVED,
+                    "INSUFFICIENT_FUNDS", "Solde insuffisant", "POLL")),
+            Map.entry(EventTypes.PROVIDER_OPERATION_UNRESOLVED,
             new Payloads.ProviderOperationUnresolved(
-                    "0f4d3d7e-1c9a-4a2b-9f3e-2b7c1d5e6a8f", "MTN_MOMO", "MTN-REF-1", 12, "PENDING"),
-
-            EventTypes.PAYMENT_COLLECTION_REQUESTED,
+                    "0f4d3d7e-1c9a-4a2b-9f3e-2b7c1d5e6a8f", "MTN_MOMO", "MTN-REF-1", 12, "PENDING")),
+            Map.entry(EventTypes.PAYMENT_COLLECTION_REQUESTED,
             new Payloads.PaymentCollectionRequested(
                     "0f4d3d7e-1c9a-4a2b-9f3e-2b7c1d5e6a8f", "TX-001", "10000", "XAF",
-                    "100", "2100.wallet-c", "MTN_MOMO", "+2376****0001"),
-
-            EventTypes.PAYMENT_COLLECTION_COMPLETED,
+                    "100", "2100.wallet-c", "MTN_MOMO", "+2376****0001")),
+            Map.entry(EventTypes.PAYMENT_COLLECTION_COMPLETED,
             new Payloads.PaymentCollectionCompleted(
                     "0f4d3d7e-1c9a-4a2b-9f3e-2b7c1d5e6a8f", "TX-001", "10000", "XAF",
-                    "100", "150", "2100.wallet-c", "JE-20260821-AB12CD34", "+2376****0001"),
-
-            EventTypes.PAYMENT_COLLECTION_FAILED,
+                    "100", "150", "2100.wallet-c", "JE-20260821-AB12CD34", "+2376****0001")),
+            Map.entry(EventTypes.PAYMENT_COLLECTION_FAILED,
             new Payloads.PaymentCollectionFailed(
                     "0f4d3d7e-1c9a-4a2b-9f3e-2b7c1d5e6a8f", "TX-001", "10000", "XAF",
-                    "PROVIDER_DECLINED", "Solde insuffisant", "+2376****0001"),
-
-            EventTypes.PAYMENT_MANUAL_REVIEW_REQUIRED,
+                    "PROVIDER_DECLINED", "Solde insuffisant", "+2376****0001")),
+            Map.entry(EventTypes.PAYMENT_MANUAL_REVIEW_REQUIRED,
             new Payloads.PaymentManualReviewRequired(
                     "0f4d3d7e-1c9a-4a2b-9f3e-2b7c1d5e6a8f", "TX-001", "MANUAL_REVIEW",
-                    "budget de polling epuise sans statut definitif")
-    );
+                    "budget de polling epuise sans statut definitif")),
+            Map.entry(EventTypes.PROVIDER_DISBURSEMENT_EXECUTE,
+                    new Payloads.ProviderDisbursementExecute(
+                            "0f4d3d7e-1c9a-4a2b-9f3e-2b7c1d5e6a8f", "MTN_MOMO", "5000", "XAF",
+                            "+237670000001", "TX-002", "disbursement:0f4d3d7e")),
+            Map.entry(EventTypes.PAYMENT_DISBURSEMENT_REQUESTED,
+                    new Payloads.PaymentDisbursementRequested(
+                            "0f4d3d7e-1c9a-4a2b-9f3e-2b7c1d5e6a8f", "TX-002", "5000", "XAF",
+                            "50", "2100.wallet-c", "MTN_MOMO", "JE-20260825-RESERVE1",
+                            "+2376****0001")),
+            Map.entry(EventTypes.PAYMENT_DISBURSEMENT_COMPLETED,
+                    new Payloads.PaymentDisbursementCompleted(
+                            "0f4d3d7e-1c9a-4a2b-9f3e-2b7c1d5e6a8f", "TX-002", "5000", "XAF",
+                            "50", "25", "2100.wallet-c", "JE-20260825-SETTLE01",
+                            "+2376****0001")),
+            Map.entry(EventTypes.PAYMENT_DISBURSEMENT_REVERSED,
+                    new Payloads.PaymentDisbursementReversed(
+                            "0f4d3d7e-1c9a-4a2b-9f3e-2b7c1d5e6a8f", "TX-002", "5000", "XAF",
+                            "2100.wallet-c", "JE-20260825-RESERVE1", "JE-20260825-REVERSE1",
+                            "PROVIDER_DECLINED", "Beneficiaire inconnu", "+2376****0001")));
 
     static Stream<String> declaredEventTypes() {
         return SAMPLES.keySet().stream().sorted();

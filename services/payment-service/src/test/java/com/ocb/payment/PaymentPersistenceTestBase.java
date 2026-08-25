@@ -184,6 +184,19 @@ public abstract class PaymentPersistenceTestBase {
                 """.formatted(suffix, amount, msisdn, suffix);
     }
 
+    protected String disbursementBody(String amount, String walletAccountRef) {
+        return """
+                {
+                  "externalRef": "TX-%s",
+                  "amount": "%s",
+                  "currency": "XAF",
+                  "payeeMsisdn": "+237670000001",
+                  "walletAccountRef": "%s",
+                  "providerCode": "MTN_MOMO"
+                }
+                """.formatted(suffix, amount, walletAccountRef);
+    }
+
     /**
      * Compte les evenements d'une transaction precise.
      *
