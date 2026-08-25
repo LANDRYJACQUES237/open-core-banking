@@ -603,7 +603,8 @@ open-core-banking/
 │   ├── common-events             enveloppe + DTO generes depuis les JSON Schema
 │   ├── common-web                RFC 7807, filtre d'idempotence, correlationId
 │   ├── common-outbox             entite, repository, relais (starter Spring Boot)
-│   ├── common-security           resource server, masquage des logs
+│   ├── common-security           resource server, validation d'audience
+│   ├── common-kafka              rebut, retentative, deduplication des messages
 │   └── common-test               fixtures Testcontainers, factories WireMock
 ├── services/
 │   ├── ledger-service/

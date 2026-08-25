@@ -2,7 +2,7 @@ package com.ocb.payment.adapter.messaging;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ocb.payment.application.ProviderOutcomeService;
-import com.ocb.payment.domain.port.ProcessedMessageStore;
+import com.ocb.platform.kafka.ProcessedMessageStore;
 import com.ocb.platform.events.EventJson;
 import com.ocb.platform.events.EventTypes;
 import com.ocb.platform.events.Payloads;
@@ -65,7 +65,7 @@ public class ProviderEventConsumer {
 
     @KafkaListener(topics = "#{T(com.ocb.platform.events.Topics).EVT_PROVIDER}",
             groupId = "${ocb.kafka.groups.provider-events}",
-            containerFactory = "paymentKafkaListenerContainerFactory")
+            containerFactory = "ocbKafkaListenerContainerFactory")
     @Transactional
     public void onProviderEvent(String rawMessage) {
         ReceivedEvent event = read(rawMessage);

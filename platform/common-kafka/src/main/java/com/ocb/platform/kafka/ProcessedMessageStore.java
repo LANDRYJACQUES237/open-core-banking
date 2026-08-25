@@ -1,4 +1,4 @@
-package com.ocb.payment.domain.port;
+package com.ocb.platform.kafka;
 
 /**
  * Deduplication des messages consommes.
@@ -6,6 +6,11 @@ package com.ocb.payment.domain.port;
  * <p>Kafka garantit une livraison <b>au moins une fois</b>. Un consommateur qui redemarre
  * entre le traitement d'un message et la validation de son offset le recevra a nouveau.
  * Sans cette table, chaque redemarrage rejouerait des effets metier.
+ *
+ * <p>C'est une deduplication <b>technique</b> : elle reconnait le meme message, identifie
+ * par son {@code eventId}. Elle ne dit rien de deux messages differents qui annonceraient
+ * le meme fait — cette deduplication-la est <b>logique</b>, elle depend du metier et
+ * n'a donc pas sa place ici.
  */
 public interface ProcessedMessageStore {
 

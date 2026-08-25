@@ -68,7 +68,7 @@ public class SimulatedProviderConsumer {
 
     @KafkaListener(topics = "#{T(com.ocb.platform.events.Topics).CMD_PROVIDER}",
             groupId = "${ocb.kafka.groups.provider-simulator:provider-simulator}",
-            containerFactory = "paymentKafkaListenerContainerFactory")
+            containerFactory = "ocbKafkaListenerContainerFactory")
     public void onCommand(String rawMessage) throws Exception {
         ReceivedEvent event = mapper.readValue(rawMessage, ReceivedEvent.class);
         if (!EventTypes.PROVIDER_COLLECTION_EXECUTE.equals(event.eventType())) {

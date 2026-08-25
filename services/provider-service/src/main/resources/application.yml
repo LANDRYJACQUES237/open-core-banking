@@ -57,6 +57,8 @@ ocb:
       - provider-service
 
   kafka:
+    consumer:
+      schema: provider
     groups:
       provider-commands: provider-service.commands
 

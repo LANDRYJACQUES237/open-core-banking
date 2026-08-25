@@ -58,6 +58,11 @@
             </dependency>
             <dependency>
                 <groupId>com.ocb</groupId>
+                <artifactId>common-kafka</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.ocb</groupId>
                 <artifactId>common-security</artifactId>
                 <version>${project.version}</version>
             </dependency>

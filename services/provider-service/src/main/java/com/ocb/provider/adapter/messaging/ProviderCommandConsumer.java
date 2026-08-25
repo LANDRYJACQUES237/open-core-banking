@@ -9,7 +9,7 @@ import com.ocb.platform.events.ReceivedEvent;
 import com.ocb.platform.web.CorrelationIdFilter;
 import com.ocb.provider.application.CollectionExecutionService;
 import com.ocb.provider.domain.ProviderCode;
-import com.ocb.provider.domain.port.ProcessedMessageStore;
+import com.ocb.platform.kafka.ProcessedMessageStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -52,7 +52,7 @@ public class ProviderCommandConsumer {
 
     @KafkaListener(topics = "#{T(com.ocb.platform.events.Topics).CMD_PROVIDER}",
             groupId = "${ocb.kafka.groups.provider-commands}",
-            containerFactory = "providerKafkaListenerContainerFactory")
+            containerFactory = "ocbKafkaListenerContainerFactory")
     @Transactional
     public void onCommand(String rawMessage) {
         ReceivedEvent event = read(rawMessage);

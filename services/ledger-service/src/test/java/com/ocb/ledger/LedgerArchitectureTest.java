@@ -5,6 +5,8 @@ import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchRule;
 
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage;
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideOutsideOfPackage;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noFields;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noMethods;
@@ -53,10 +55,21 @@ class LedgerArchitectureTest {
             .because("la couche application s'exprime en ports ; dependre d'un adaptateur "
                     + "ou du contrat HTTP la rendrait inutilisable depuis un autre point d'entree");
 
+    /**
+     * Un module partage ne connait aucun service.
+     *
+     * <p>Formulee generiquement, et non contre {@code com.ocb.ledger..} seul : une regle
+     * qui nomme un service ne peut pas echouer pour un autre, et donnerait un vert
+     * trompeur. Elle est reprise a l'identique dans payment-service et provider-service,
+     * ou d'autres classes sont sur le chemin de compilation — une regle ne voit que ce que
+     * son module compile.
+     */
     @ArchTest
     static final ArchRule platformCarriesNoBusinessLogic = noClasses()
             .that().resideInAPackage("com.ocb.platform..")
-            .should().dependOnClassesThat().resideInAPackage("com.ocb.ledger..")
+            .should().dependOnClassesThat(
+                    resideInAPackage("com.ocb..")
+                            .and(resideOutsideOfPackage("com.ocb.platform..")))
             .because("un module partage qui connait un service devient le vecteur du "
                     + "monolithe distribue que le decoupage cherche a eviter");
 

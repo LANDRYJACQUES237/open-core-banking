@@ -24,5 +24,6 @@
         <module>common-events</module>
         <module>common-outbox</module>
         <module>common-security</module>
+        <module>common-kafka</module>
     </modules>
 </project>
