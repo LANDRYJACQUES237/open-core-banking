@@ -309,6 +309,7 @@
         "externalRef",
         "amount",
         "currency",
+        "walletAccountRef",
         "failureCode"
       ],
       "properties": {
@@ -324,6 +325,10 @@
         },
         "currency": {
           "$ref": "#/$defs/currency"
+        },
+        "walletAccountRef": {
+          "type": "string",
+          "description": "Portefeuille concerne. Ajoute pour que le destinataire d'une notification soit identifiable : le numero masque ne permet de joindre personne."
         },
         "failureCode": {
           "type": "string"

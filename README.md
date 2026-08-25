@@ -31,7 +31,8 @@ Les proprietes suivantes sont implementees **et testees**, pas seulement mention
 | Machine a etats a transitions gardees | Livre | `payment-service` |
 | Contrat d'evenements opposable, valide en CI | Livre | `contracts/events` |
 | Donnee personnelle non conservee plutot que chiffree | Livre | `payment-service` |
-| Consommateurs Kafka idempotents | Livre | `payment-service` |
+| Consommateurs Kafka idempotents | Livre | `payment-service`, `provider-service`, `notification-service` |
+| File de rebut et retentative bornee | Livre | `platform/common-kafka` |
 | Saga avec compensation | Livre | `payment-service` (decaissement) |
 | Timeout traite comme "inconnu", jamais comme echec | Livre | `provider-service` |
 | Callbacks signes **et** polling de reconciliation | Livre | `provider-service` |
@@ -82,7 +83,7 @@ Deux points de decoupage meritent d'etre lus avant le code :
 | 1 | `ledger-service` : comptes, partie double, soldes, API REST | Termine |
 | 2 | `payment-service` : idempotence, machine a etats, outbox, Kafka | Termine |
 | 3 | `provider-service` : abstraction operateur, webhooks, polling, **securite OIDC** | Termine |
-| 4 | Saga de decaissement, transfert atomique, puis `notification-service` | En cours |
+| 4 | Saga de decaissement, transfert atomique, `notification-service` | Termine |
 | 5 | Docker Compose, Helm, sondes, observabilite | A venir |
 | 6 | Documentation, diagrammes, guide de demarrage | A venir |
 
@@ -121,7 +122,8 @@ PostgreSQL reel — la contrainte differee et les droits n'ont aucun sens sans l
 Pour lancer un service, voir son README :
 [ledger-service](services/ledger-service/README.md) ·
 [payment-service](services/payment-service/README.md) ·
-[provider-service](services/provider-service/README.md).
+[provider-service](services/provider-service/README.md) ·
+[notification-service](services/notification-service/README.md).
 
 Le contrat des evenements Kafka et ses regles de compatibilite sont dans
 [contracts/events](contracts/events/README.md).

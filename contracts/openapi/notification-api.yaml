@@ -1,0 +1,87 @@
+openapi: 3.0.3
+
+info:
+  title: OCB Notification API
+  version: 1.0.0
+  description: |
+    Consultation des notifications emises. Ce service n'expose aucune ecriture : il ne
+    reagit qu'a des evenements. La seule surface HTTP existe pour repondre a la question
+    qu'un exploitant se pose reellement — "le client a-t-il ete prevenu, et quand".
+
+servers:
+  - url: http://localhost:8084
+    description: Local
+
+tags:
+  - name: notifications
+
+paths:
+  /v1/notifications/{transactionId}:
+    get:
+      tags: [notifications]
+      operationId: listNotifications
+      summary: Notifications emises pour une transaction
+      parameters:
+        - name: transactionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Liste, eventuellement vide
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Notification'
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+components:
+  schemas:
+    Notification:
+      type: object
+      required: [notificationId, transactionId, type, channel, recipientRef, message, deliveredAt]
+      properties:
+        notificationId: { type: string, format: uuid }
+        transactionId: { type: string, format: uuid }
+        type:
+          type: string
+          enum:
+            - COLLECTION_COMPLETED
+            - COLLECTION_FAILED
+            - DISBURSEMENT_COMPLETED
+            - DISBURSEMENT_REVERSED
+            - TRANSFER_COMPLETED
+            - MANUAL_REVIEW_REQUIRED
+        channel:
+          type: string
+          enum: [CUSTOMER, OPS]
+          description: |
+            Tout evenement ne merite pas d'etre dit au client. Une transaction en attente
+            d'arbitrage regarde l'exploitation, pas le porteur du compte.
+        recipientRef:
+          type: string
+          description: |
+            Reference du portefeuille, et non un numero de telephone. Aucun service ne
+            conserve le numero en clair : le resoudre appartient a l'adaptateur d'envoi.
+        message: { type: string }
+        deliveredAt: { type: string, format: date-time }
+
+    Problem:
+      type: object
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        code: { type: string }
+        correlationId: { type: string }
+
+  responses:
+    BadRequest:
+      description: Requete invalide
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'

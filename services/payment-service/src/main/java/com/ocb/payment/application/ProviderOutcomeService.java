@@ -183,6 +183,7 @@ public class ProviderOutcomeService {
                 new Payloads.PaymentCollectionFailed(
                         transactionId.toString(), transaction.externalRef(),
                         transaction.amount().toPlainString(), transaction.amount().currencyCode(),
+                        transaction.walletAccountRef(),
                         event.errorCode(), event.errorMessage(), transaction.maskedMsisdn())));
     }
 

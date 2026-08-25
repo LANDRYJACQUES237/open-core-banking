@@ -41,6 +41,14 @@ public final class OcbScopes {
     /** Consulter l'etat d'une operation operateur, pour le diagnostic. */
     public static final String PROVIDER_READ = "provider:read";
 
+    /**
+     * Consulter les notifications emises pour une transaction.
+     *
+     * <p>Portee d'exploitation : la liste des messages envoyes a un portefeuille renseigne
+     * sur son activite, meme sans montant.
+     */
+    public static final String NOTIFICATION_READ = "notification:read";
+
     /** Arbitrer une transaction restee sans reponse. Destinee a un operateur humain. */
     public static final String ADMIN_RECONCILE = "admin:reconcile";
 

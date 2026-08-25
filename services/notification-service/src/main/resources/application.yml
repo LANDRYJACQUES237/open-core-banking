@@ -1,0 +1,86 @@
+spring:
+  application:
+    name: notification-service
+
+  datasource:
+    url: ${NOTIFICATION_DB_URL:jdbc:postgresql://localhost:5435/notification}
+    username: ${NOTIFICATION_DB_USER:notification_app}
+    password: ${NOTIFICATION_DB_PASSWORD:}
+    hikari:
+      pool-name: notification-pool
+      maximum-pool-size: ${NOTIFICATION_DB_POOL_SIZE:10}
+
+  flyway:
+    enabled: true
+    schemas: notification
+    default-schema: notification
+    user: ${NOTIFICATION_DB_MIGRATION_USER:postgres}
+    password: ${NOTIFICATION_DB_MIGRATION_PASSWORD:}
+    placeholders:
+      notificationAppRole: ${NOTIFICATION_APP_ROLE:notification_app}
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}
+    # Un producteur est neanmoins configure : le gestionnaire d'erreurs de common-kafka
+    # publie vers le topic de rebut, ce qui est la seule ecriture Kafka de ce service.
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+    listener:
+      ack-mode: record
+
+  jackson:
+    default-property-inclusion: non_null
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${OIDC_ISSUER_URI:http://localhost:8090/realms/ocb}
+
+server:
+  port: ${NOTIFICATION_PORT:8084}
+  error:
+    include-message: never
+    include-stacktrace: never
+
+ocb:
+  security:
+    audiences:
+      - notification-service
+
+  kafka:
+    consumer:
+      schema: notification
+    groups:
+      # Groupe distinct de celui de payment-service, qui lit un autre topic. Deux groupes
+      # peuvent lire le meme flux sans se masquer l'un l'autre : c'est ce que garantit la
+      # cle composite de processed_message.
+      payment-events: notification-service.payment-events
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+
+logging:
+  pattern:
+    level: "%5p [%X{correlationId}]"
+  level:
+    root: INFO
+    com.ocb: ${NOTIFICATION_LOG_LEVEL:INFO}

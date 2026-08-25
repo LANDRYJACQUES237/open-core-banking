@@ -76,7 +76,8 @@ class EventContractTest {
             Map.entry(EventTypes.PAYMENT_COLLECTION_FAILED,
             new Payloads.PaymentCollectionFailed(
                     "0f4d3d7e-1c9a-4a2b-9f3e-2b7c1d5e6a8f", "TX-001", "10000", "XAF",
-                    "PROVIDER_DECLINED", "Solde insuffisant", "+2376****0001")),
+                    "2100.wallet-c", "PROVIDER_DECLINED", "Solde insuffisant",
+                    "+2376****0001")),
             Map.entry(EventTypes.PAYMENT_MANUAL_REVIEW_REQUIRED,
             new Payloads.PaymentManualReviewRequired(
                     "0f4d3d7e-1c9a-4a2b-9f3e-2b7c1d5e6a8f", "TX-001", "MANUAL_REVIEW",

@@ -156,11 +156,18 @@ public final class Payloads {
     ) {
     }
 
+    /**
+     * @param walletAccountRef portefeuille concerne. Presence indispensable : le numero
+     *                         masque ne permet de joindre personne, si bien qu'un
+     *                         consommateur charge de prevenir le client n'aurait
+     *                         autrement aucun moyen de savoir a qui s'adresser
+     */
     public record PaymentCollectionFailed(
             String transactionId,
             String externalRef,
             String amount,
             String currency,
+            String walletAccountRef,
             String failureCode,
             String failureReason,
             String maskedMsisdn
