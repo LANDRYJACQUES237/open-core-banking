@@ -39,6 +39,25 @@ public class OcbSecurityConfiguration {
         String issuer = springProperties.getJwt().getIssuerUri();
         String jwkSetUri = springProperties.getJwt().getJwkSetUri();
 
+        if (issuer == null || issuer.isBlank()) {
+            // L'emetteur attendu n'est pas une commodite : c'est lui qui distingue un jeton
+            // emis par notre fournisseur d'identite d'un jeton emis par n'importe qui
+            // d'autre. Sans lui, la validation ci-dessous n'aurait plus rien a comparer, et
+            // le service accepterait des jetons signes par une autorite inconnue.
+            throw new IllegalStateException(
+                    "spring.security.oauth2.resourceserver.jwt.issuer-uri est obligatoire : "
+                            + "sans emetteur attendu, aucun jeton ne peut etre rattache a une autorite");
+        }
+
+        // Avec jwk-set-uri, le decodeur ne contacte le fournisseur d'identite qu'au premier
+        // jeton recu. Sans, withIssuerLocation va chercher le document de decouverte des la
+        // construction du bean : un fournisseur indisponible empeche alors le service de
+        // DEMARRER, et donc de redemarrer au moment precis ou on en a besoin. C'est la meme
+        // regle que pour les sondes — la vivacite ne depend d'aucun systeme externe.
+        //
+        // La securite est identique dans les deux cas : la revendication iss est verifiee
+        // par le validateur ci-dessous, jamais par la confiance accordee au document de
+        // decouverte.
         NimbusJwtDecoder decoder = jwkSetUri != null && !jwkSetUri.isBlank()
                 ? NimbusJwtDecoder.withJwkSetUri(jwkSetUri).build()
                 : NimbusJwtDecoder.withIssuerLocation(issuer).build();

@@ -42,6 +42,8 @@ public class ReconciliationPoller {
 
     private static final Logger log = LoggerFactory.getLogger(ReconciliationPoller.class);
 
+    private final io.micrometer.core.instrument.Counter unresolved;
+
     private final OperationStore operations;
     private final ProviderClient providerClient;
     private final OperationEventPublisher events;
@@ -61,6 +63,7 @@ public class ReconciliationPoller {
                                 OperationEventPublisher events,
                                 AuditStore audit,
                                 PlatformTransactionManager transactionManager,
+                                io.micrometer.core.instrument.MeterRegistry meters,
                                 @Value("${ocb.provider.poll.budget:PT24H}") Duration budget,
                                 @Value("${ocb.provider.poll.batch-size:50}") int batchSize) {
         this.operations = operations;
@@ -71,6 +74,11 @@ public class ReconciliationPoller {
         this.batchSize = batchSize;
         this.transaction = new TransactionTemplate(transactionManager);
         this.transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+
+        // Compteur plutot que jauge : ce qui compte est le RYTHME auquel des operations
+        // deviennent non resolues. Une jauge du nombre courant baisserait des qu'un humain
+        // traite un dossier, et masquerait donc precisement l'aggravation qu'on veut voir.
+        this.unresolved = meters.counter("ocb.provider.unresolved");
     }
 
     @Scheduled(fixedDelayString = "${ocb.provider.poll.interval:PT5S}")
@@ -157,6 +165,7 @@ public class ReconciliationPoller {
                     ProviderOperation exhausted =
                             operations.markBudgetExhausted(operation.id(), lastError);
                     events.unresolved(exhausted, null);
+                    unresolved.increment();
                     audit.append("POLL_BUDGET_EXHAUSTED", "ProviderOperation",
                             operation.transactionId().toString(), null,
                             Map.of("attempts", attempts,

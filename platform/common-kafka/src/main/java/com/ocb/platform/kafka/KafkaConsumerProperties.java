@@ -19,6 +19,8 @@ public class KafkaConsumerProperties {
 
     private final Retry retry = new Retry();
 
+    private final Health health = new Health();
+
     public String getSchema() {
         return schema;
     }
@@ -29,6 +31,32 @@ public class KafkaConsumerProperties {
 
     public Retry getRetry() {
         return retry;
+    }
+
+    public Health getHealth() {
+        return health;
+    }
+
+    /** Sonde de disponibilite du courtier. */
+    public static class Health {
+
+        /**
+         * Delai maximal d'interrogation du courtier.
+         *
+         * <p>Court, et c'est essentiel : une sonde de disponibilite est appelee toutes les
+         * quelques secondes. Sans borne, un courtier qui accepte la connexion sans repondre
+         * immobiliserait un fil de requete a chaque appel jusqu'a epuisement du pool, et le
+         * service tomberait pour une raison sans rapport avec la question posee.
+         */
+        private Duration timeout = Duration.ofSeconds(2);
+
+        public Duration getTimeout() {
+            return timeout;
+        }
+
+        public void setTimeout(Duration timeout) {
+            this.timeout = timeout;
+        }
     }
 
     /**

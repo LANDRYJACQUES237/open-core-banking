@@ -11,6 +11,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.jdbc.JdbcClientAutoConfiguration;
 import org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration;
+import org.springframework.boot.actuate.health.HealthIndicator;
+import org.springframework.kafka.core.KafkaAdmin;
 import org.springframework.boot.autoconfigure.kafka.ConcurrentKafkaListenerContainerFactoryConfigurer;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -49,6 +51,26 @@ public class KafkaConsumerAutoConfiguration {
     public ProcessedMessageStore processedMessageStore(JdbcClient jdbcClient,
                                                        KafkaConsumerProperties properties) {
         return new JdbcProcessedMessageStore(jdbcClient, properties);
+    }
+
+    /**
+     * Sonde de disponibilite du courtier, absente de Spring Boot.
+     *
+     * <p>Conditionnee a la presence d'Actuator : un module partage ne doit pas imposer un
+     * point de terminaison de supervision a un service qui n'en embarque pas.
+     *
+     * <p>Elle a vocation a figurer dans le groupe <b>readiness</b> et jamais dans la
+     * liveness. Un pod dont la vivacite dependrait du courtier redemarrerait en boucle
+     * pendant une coupure Kafka, ce qui n'y changerait rien et ajouterait une panne a une
+     * panne.
+     */
+    @Bean("kafka")
+    @ConditionalOnClass(HealthIndicator.class)
+    @ConditionalOnBean(KafkaAdmin.class)
+    @ConditionalOnMissingBean(name = "kafka")
+    public KafkaHealthIndicator kafkaHealthIndicator(KafkaAdmin kafkaAdmin,
+                                                     KafkaConsumerProperties properties) {
+        return new KafkaHealthIndicator(kafkaAdmin, properties.getHealth().getTimeout());
     }
 
     /**

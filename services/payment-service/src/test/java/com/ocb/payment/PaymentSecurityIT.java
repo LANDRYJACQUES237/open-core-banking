@@ -94,7 +94,14 @@ class PaymentSecurityIT extends PaymentPersistenceTestBase {
         // Kubernetes ne presente pas de jeton. Fermer ces points d'entree rendrait le
         // service impossible a demarrer en cluster.
         assertThat(get("/actuator/health/liveness", null).status()).isEqualTo(200);
-        assertThat(get("/actuator/health/readiness", null).status()).isEqualTo(200);
+
+        // Sur la readiness, l'assertion porte sur l'ACCES et non sur l'etat. Ce socle ne
+        // demarre aucun courtier : la readiness inclut Kafka, elle repond donc 503, et
+        // c'est le comportement correct. Un 503 prouve tout aussi bien que la chaine de
+        // securite n'a pas rejete l'appel — ce que ce test verifie.
+        assertThat(get("/actuator/health/readiness", null).status())
+                .as("accessible sans jeton, quel que soit l'etat du courtier")
+                .isNotIn(401, 403);
     }
 
     @Test

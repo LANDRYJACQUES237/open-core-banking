@@ -44,6 +44,16 @@
             <artifactId>spring-boot-configuration-processor</artifactId>
             <optional>true</optional>
         </dependency>
+        <!--
+          Optionnelle : la sonde de disponibilite du courtier n'existe que si le service
+          embarque Actuator. Un module partage ne doit pas imposer un point de terminaison
+          de supervision a qui n'en veut pas.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+            <optional>true</optional>
+        </dependency>
 
         <dependency>
             <groupId>org.springframework.boot</groupId>

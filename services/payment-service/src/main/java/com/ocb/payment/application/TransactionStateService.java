@@ -42,8 +42,12 @@ public class TransactionStateService {
 
     private final TransactionStore transactions;
 
-    public TransactionStateService(TransactionStore transactions) {
+    private final io.micrometer.core.instrument.MeterRegistry meters;
+
+    public TransactionStateService(TransactionStore transactions,
+                                   io.micrometer.core.instrument.MeterRegistry meters) {
         this.transactions = transactions;
+        this.meters = meters;
     }
 
     @Transactional
@@ -73,6 +77,19 @@ public class TransactionStateService {
         }
 
         PaymentTransaction updated = transactions.applyTransition(transactionId, target, update);
+
+        // Compte les transitions ACCEPTEES, ici et nulle part ailleurs : c'est le point de
+        // passage unique de la machine a etats, donc le seul endroit ou la metrique ne peut
+        // pas diverger de la realite. La compter chez les appelants obligerait a se
+        // souvenir de le faire a chaque nouveau chemin de code.
+        //
+        // Deux etiquettes seulement, et aucune de cardinalite non bornee : ni identifiant
+        // de transaction, ni reference externe. Une etiquette libre fait exploser le nombre
+        // de series temporelles et met Prometheus a genoux.
+        meters.counter("ocb.transactions",
+                "type", updated.type().name(),
+                "status", target.name()).increment();
+
         log.debug("Transition {} -> {} appliquee sur {}", current.status(), target, transactionId);
         return new Applied(decision, updated);
     }

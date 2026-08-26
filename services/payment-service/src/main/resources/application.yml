@@ -50,6 +50,14 @@ spring:
       resourceserver:
         jwt:
           issuer-uri: ${OIDC_ISSUER_URI:http://localhost:8090/realms/ocb}
+          # Renseigne pour que le decodeur ne contacte le fournisseur d'identite qu'au
+          # PREMIER JETON RECU, et non a la construction du bean. Sans cette propriete,
+          # Spring va chercher le document de decouverte au demarrage : un Keycloak
+          # indisponible empeche alors le service de demarrer, donc de redemarrer au moment
+          # precis ou on en aurait besoin.
+          #
+          # La securite est identique : la revendication iss reste verifiee a chaque jeton.
+          jwk-set-uri: ${OIDC_JWK_SET_URI:http://localhost:8090/realms/ocb/protocol/openid-connect/certs}
       client:
         registration:
           ledger:
@@ -123,11 +131,26 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics
+        include: health,info,metrics,prometheus
   endpoint:
     health:
       probes:
         enabled: true
+      # Le contenu des sondes est decide ici, et c'est le coeur du sujet.
+      #
+      # LIVENESS ne depend d'AUCUN systeme externe. Une sonde de vivacite qui echoue fait
+      # redemarrer le pod ; si elle dependait de la base ou du courtier, une coupure de
+      # ceux-ci ferait redemarrer en boucle des processus parfaitement sains, ajoutant une
+      # panne a une panne et retardant le retour a la normale.
+      #
+      # READINESS, elle, doit dire la verite sur la capacite a servir. Un service coupe de
+      # sa base ou de son courtier repond encore en HTTP mais ne fait plus rien d'utile :
+      # le retirer du service est exactement le bon comportement, et il y revient seul.
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState,db,kafka
       show-details: never
 
 logging:

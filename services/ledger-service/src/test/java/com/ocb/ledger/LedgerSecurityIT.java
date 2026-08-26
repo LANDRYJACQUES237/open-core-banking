@@ -165,6 +165,9 @@ class LedgerSecurityIT extends LedgerIntegrationTestBase {
             // perpetuellement non pret, et le deploiement echouerait sans que la cause
             // soit evidente.
             assertThat(get("/actuator/health/liveness", null).status()).isEqualTo(200);
+
+            // Ce service ne consomme aucun message : sa readiness ne verifie que la base,
+            // qui tourne. Elle repond donc 200 ici, contrairement aux trois consommateurs.
             assertThat(get("/actuator/health/readiness", null).status()).isEqualTo(200);
         }
 
