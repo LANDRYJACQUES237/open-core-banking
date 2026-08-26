@@ -1,0 +1,216 @@
+# =====================================================================================
+# Valeurs par defaut de la plateforme.
+#
+# **Aucun secret ici, et ce n'est pas un oubli.** Les mots de passe, les secrets clients
+# et les secrets de signature de webhook arrivent par des objets Secret existants, nommes
+# ci-dessous et crees hors de ce chart. Un mot de passe dans values.yaml finit dans le
+# depot, dans l'historique Helm, et dans la sortie de `helm get values` — trois endroits
+# ou personne ne pense a le chercher le jour ou il faut le revoquer.
+#
+# Ce que ce chart fait : envFrom sur des Secret nommes, aucune valeur sensible en clair.
+# Ce qu'il ne fait pas : chiffrer ces Secret au repos. Un Secret Kubernetes est du base64,
+# pas du chiffrement. Voir deploy/README.md.
+# =====================================================================================
+
+image:
+  registry: ghcr.io/landryjacques237
+  # Vide : la version de l'application (appVersion) sert alors d'etiquette. Une etiquette
+  # figee ici serait oubliee a la prochaine livraison.
+  tag: ""
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+
+# Configuration commune, non sensible.
+#
+# L'EMETTEUR est ce qui est verifie dans le jeton ; les CLES sont ce qui est appele sur le
+# reseau. Les deux different des qu'un ingress separe l'exterieur de l'interieur, et les
+# confondre produit une panne qui depend du chemin emprunte.
+oidc:
+  issuerUri: https://id.example.org/realms/ocb
+  jwkSetUri: http://keycloak.identity.svc.cluster.local:8080/realms/ocb/protocol/openid-connect/certs
+
+kafka:
+  bootstrap: kafka.messaging.svc.cluster.local:9092
+
+# Duree maximale d'une migration avant abandon.
+#
+# Une migration qui attend un verrou indefiniment tiendrait la release en echec sans
+# jamais rendre la main, et l'operateur n'aurait aucun signal a interpreter.
+migrationDeadlineSeconds: 600
+
+serviceAccount:
+  create: true
+  annotations: {}
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# --- Les quatre services ------------------------------------------------------------
+#
+# outboxRelay: true signale un service qui heberge le relais d'outbox. Ce relais tourne en
+# une seule instance par conception (voir OutboxRelay) : deux relais concurrents, avec
+# FOR UPDATE SKIP LOCKED, pourraient publier l'evenement 2 avant l'evenement 1. Le chart en
+# tire deux consequences automatiques : replicas force a 1, et strategie Recreate.
+services:
+
+  ledger:
+    enabled: true
+    port: 8081
+    replicaCount: 2
+    outboxRelay: false
+    image:
+      repository: ledger-service
+      migrationRepository: ledger-migrate
+    # Secret detenu par les pods applicatifs. Clefs attendues :
+    #   LEDGER_DB_PASSWORD
+    secretName: ocb-ledger-app
+    env:
+      LEDGER_DB_URL: jdbc:postgresql://ledger-db:5432/ledger
+      LEDGER_DB_USER: ledger_app
+      LEDGER_APP_ROLE: ledger_app
+      LEDGER_DB_POOL_SIZE: "10"
+      LEDGER_LOG_LEVEL: INFO
+      # Le service ne migre pas : il n'en a ni le droit ni le besoin.
+      SPRING_FLYWAY_ENABLED: "false"
+    migration:
+      enabled: true
+      # Secret DISTINCT du precedent, detenu par le seul Job. Clefs attendues :
+      #   FLYWAY_PASSWORD
+      secretName: ocb-ledger-migration
+      env:
+        FLYWAY_URL: jdbc:postgresql://ledger-db:5432/ledger
+        FLYWAY_USER: ledger_owner
+        FLYWAY_SCHEMAS: ledger
+        FLYWAY_DEFAULT_SCHEMA: ledger
+        FLYWAY_PLACEHOLDERS_LEDGERAPPROLE: ledger_app
+    resources:
+      requests:
+        cpu: 200m
+        memory: 768Mi
+      limits:
+        memory: 768Mi
+    ingress:
+      enabled: false
+
+  payment:
+    enabled: true
+    port: 8082
+    replicaCount: 1
+    outboxRelay: true
+    kafka: true
+    image:
+      repository: payment-service
+      migrationRepository: payment-migrate
+    # Clefs attendues : PAYMENT_DB_PASSWORD, LEDGER_CLIENT_SECRET
+    secretName: ocb-payment-app
+    env:
+      PAYMENT_DB_URL: jdbc:postgresql://payment-db:5432/payment
+      PAYMENT_DB_USER: payment_app
+      PAYMENT_APP_ROLE: payment_app
+      PAYMENT_DB_POOL_SIZE: "10"
+      PAYMENT_LOG_LEVEL: INFO
+      SPRING_FLYWAY_ENABLED: "false"
+      # Resolue par tpl a la generation : voir templates/deployment.yaml.
+      LEDGER_BASE_URL: "http://{{ .Release.Name }}-ledger:8081"
+      OIDC_TOKEN_URI: http://keycloak.identity.svc.cluster.local:8080/realms/ocb/protocol/openid-connect/token
+      LEDGER_CLIENT_ID: payment-service
+    migration:
+      enabled: true
+      secretName: ocb-payment-migration
+      env:
+        FLYWAY_URL: jdbc:postgresql://payment-db:5432/payment
+        FLYWAY_USER: payment_owner
+        FLYWAY_SCHEMAS: payment
+        FLYWAY_DEFAULT_SCHEMA: payment
+        FLYWAY_PLACEHOLDERS_PAYMENTAPPROLE: payment_app
+    resources:
+      requests:
+        cpu: 300m
+        memory: 768Mi
+      limits:
+        memory: 768Mi
+    ingress:
+      enabled: false
+
+  provider:
+    enabled: true
+    port: 8083
+    replicaCount: 1
+    outboxRelay: true
+    kafka: true
+    image:
+      repository: provider-service
+      migrationRepository: provider-migrate
+    # Clefs attendues : PROVIDER_DB_PASSWORD, MTN_WEBHOOK_SECRET, ORANGE_WEBHOOK_SECRET
+    secretName: ocb-provider-app
+    env:
+      PROVIDER_DB_URL: jdbc:postgresql://provider-db:5432/provider
+      PROVIDER_DB_USER: provider_app
+      PROVIDER_APP_ROLE: provider_app
+      PROVIDER_DB_POOL_SIZE: "10"
+      PROVIDER_LOG_LEVEL: INFO
+      SPRING_FLYWAY_ENABLED: "false"
+      PROVIDER_CALLBACK_BASE_URL: https://callbacks.example.org
+      MTN_API_BASE_URL: https://sandbox.momodeveloper.mtn.com
+      ORANGE_API_BASE_URL: https://api.orange.com
+    migration:
+      enabled: true
+      secretName: ocb-provider-migration
+      env:
+        FLYWAY_URL: jdbc:postgresql://provider-db:5432/provider
+        FLYWAY_USER: provider_owner
+        FLYWAY_SCHEMAS: provider
+        FLYWAY_DEFAULT_SCHEMA: provider
+        FLYWAY_PLACEHOLDERS_PROVIDERAPPROLE: provider_app
+    resources:
+      requests:
+        cpu: 200m
+        memory: 640Mi
+      limits:
+        memory: 640Mi
+    # Seul service expose : c'est lui que les operateurs rappellent.
+    ingress:
+      enabled: false
+      className: nginx
+      host: callbacks.example.org
+      path: /webhooks
+      annotations: {}
+      tls: []
+
+  notification:
+    enabled: true
+    port: 8084
+    replicaCount: 2
+    outboxRelay: false
+    kafka: true
+    image:
+      repository: notification-service
+      migrationRepository: notification-migrate
+    # Clefs attendues : NOTIFICATION_DB_PASSWORD
+    secretName: ocb-notification-app
+    env:
+      NOTIFICATION_DB_URL: jdbc:postgresql://notification-db:5432/notification
+      NOTIFICATION_DB_USER: notification_app
+      NOTIFICATION_APP_ROLE: notification_app
+      NOTIFICATION_DB_POOL_SIZE: "10"
+      NOTIFICATION_LOG_LEVEL: INFO
+      SPRING_FLYWAY_ENABLED: "false"
+    migration:
+      enabled: true
+      secretName: ocb-notification-migration
+      env:
+        FLYWAY_URL: jdbc:postgresql://notification-db:5432/notification
+        FLYWAY_USER: notification_owner
+        FLYWAY_SCHEMAS: notification
+        FLYWAY_DEFAULT_SCHEMA: notification
+        FLYWAY_PLACEHOLDERS_NOTIFICATIONAPPROLE: notification_app
+    resources:
+      requests:
+        cpu: 200m
+        memory: 640Mi
+      limits:
+        memory: 640Mi
+    ingress:
+      enabled: false

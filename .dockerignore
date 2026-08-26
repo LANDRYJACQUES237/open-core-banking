@@ -1,0 +1,12 @@
+# Ce qui n'a rien a faire dans le contexte de construction.
+#
+# target/ pese lourd et serait de toute facon recompile ; .git encore plus. Les exclure
+# reduit le contexte envoye au demon Docker de plusieurs centaines de mega-octets.
+target/
+**/target/
+.git
+.github
+.idea
+*.iml
+.env
+deploy/helm

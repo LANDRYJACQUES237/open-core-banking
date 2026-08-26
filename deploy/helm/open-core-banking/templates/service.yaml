@@ -1,0 +1,20 @@
+{{- range $name, $svc := .Values.services }}
+{{- if $svc.enabled }}
+{{- $ctx := dict "root" $ "name" $name }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ocb.name" $ctx }}
+  labels:
+    {{- include "ocb.labels" $ctx | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ $svc.port }}
+      targetPort: http
+  selector:
+    {{- include "ocb.selectorLabels" $ctx | nindent 4 }}
+{{- end }}
+{{- end }}

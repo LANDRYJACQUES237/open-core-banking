@@ -1,0 +1,35 @@
+# =====================================================================================
+# Image de migration d'un service OCB.
+#
+# **Une image distincte de celle du service, et c'est tout le propos.**
+#
+# Depuis la Phase 1, deux utilisateurs PostgreSQL coexistent : celui qui possede le schema
+# et applique les migrations, et celui qui fait tourner l'application — lequel ne recoit
+# que SELECT et INSERT sur les journaux, et ne peut donc ni reecrire ni supprimer une
+# ecriture comptable.
+#
+# Tant que Flyway s'executait dans le processus applicatif, cette separation etait
+# theorique : le conteneur de l'application devait detenir les identifiants du proprietaire
+# pour migrer au demarrage. Une image separee la rend effective — ce qui migre n'a pas de
+# serveur HTTP, pas de consommateur Kafka, pas une ligne de code metier, et ce qui sert le
+# trafic ne connait pas le mot de passe du proprietaire.
+#
+# **Contrepartie assumee.** La version de Flyway est ici independante de celle qu'embarque
+# Spring Boot. Elle est donc epinglee sur la meme majeure, et une montee de version de
+# Spring Boot demande de verifier ce fichier. C'est le prix de la separation ; il est plus
+# faible que celui d'une application capable de reecrire son propre schema.
+# =====================================================================================
+
+FROM flyway/flyway:11-alpine
+
+ARG SERVICE
+RUN test -n "$SERVICE" || (echo "L'argument SERVICE est obligatoire" && false)
+
+# Seules les migrations sont copiees. Pas de jar, pas de configuration applicative : cette
+# image ne peut rien faire d'autre que migrer.
+COPY services/${SERVICE}/src/main/resources/db/migration /flyway/sql
+
+# Le reste — URL, identifiants, schema, espaces reserves — arrive par l'environnement, donc
+# depuis un Secret. Rien de sensible n'est inscrit dans l'image.
+ENTRYPOINT ["flyway"]
+CMD ["migrate"]

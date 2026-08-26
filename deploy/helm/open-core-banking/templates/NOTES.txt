@@ -1,0 +1,35 @@
+Open Core Banking {{ .Chart.AppVersion }} — release {{ .Release.Name }} dans {{ .Release.Namespace }}.
+
+Services deployes :
+{{- range $name, $svc := .Values.services }}
+{{- if $svc.enabled }}
+  - {{ $.Release.Name }}-{{ $name }} sur le port {{ $svc.port }}{{ if $svc.outboxRelay }} (relais d'outbox : 1 replique, strategie Recreate){{ end }}
+{{- end }}
+{{- end }}
+
+CE CHART NE CREE AUCUN SECRET.
+
+Les huit Secret ci-dessous doivent exister AVANT l'installation, sans quoi les pods
+resteront en CreateContainerConfigError. Ils sont volontairement hors du chart : un mot de
+passe passe en --set finit dans l'historique du shell et dans `helm get values`.
+
+{{- range $name, $svc := .Values.services }}
+{{- if $svc.enabled }}
+
+  # {{ $name }}
+  kubectl -n {{ $.Release.Namespace }} create secret generic {{ $svc.secretName }} --from-literal=...
+{{- if $svc.migration.enabled }}
+  kubectl -n {{ $.Release.Namespace }} create secret generic {{ $svc.migration.secretName }} --from-literal=FLYWAY_PASSWORD=...
+{{- end }}
+{{- end }}
+{{- end }}
+
+Les clefs attendues de chaque Secret sont documentees dans values.yaml, au-dessus de
+`secretName`. Les deux Secret d'un meme service portent des identifiants DIFFERENTS : le
+Job de migration detient le proprietaire du schema, les pods ne detiennent que le role
+applicatif. Les confondre annulerait la garantie d'immuabilite du grand livre.
+
+Verifier une release :
+
+  kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/instance={{ .Release.Name }}
+  kubectl -n {{ .Release.Namespace }} logs job/{{ .Release.Name }}-ledger-migrate

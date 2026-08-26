@@ -1,0 +1,14 @@
+apiVersion: v2
+name: open-core-banking
+description: |
+  Plateforme Open Core Banking : quatre services, quatre bases, un courtier.
+
+  Un chart unique plutot que quatre sous-charts. Les quatre services ont exactement la
+  meme forme — un Deployment, un Service, un Job de migration — et ce qui les distingue
+  tient dans des valeurs. Quatre copies du meme gabarit divergeraient en silence : une
+  sonde corrigee ici et pas la, un contexte de securite oublie sur le dernier ajoute.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords: [banking, payments, mobile-money, ledger]
+home: https://github.com/LANDRYJACQUES237/open-core-banking

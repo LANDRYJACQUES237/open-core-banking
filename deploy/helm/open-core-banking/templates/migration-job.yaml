@@ -1,0 +1,115 @@
+{{/*
+=======================================================================================
+Les migrations, en hook pre-install et pre-upgrade.
+
+C'est ici que la separation decidee en Phase 1 devient effective.
+
+Le Job porte les identifiants du PROPRIETAIRE du schema ; les Deployment portent ceux du
+role applicatif, qui ne recoit que SELECT et INSERT sur les journaux. Deux Secret
+distincts, deux pods distincts, deux images distinctes : celle du Job ne contient que des
+fichiers SQL, pas de jar, pas de serveur HTTP, pas une ligne de code metier.
+
+Tant que Flyway s'executait dans le processus applicatif, cette separation etait
+theorique : le pod de l'application devait detenir le mot de passe du proprietaire pour
+migrer a son demarrage.
+
+**Ce que le hook garantit : si la migration echoue, la release echoue, et les nouveaux pods
+ne sont jamais deployes.** Une verification au demarrage de chaque replique ne donne pas
+cela — elle donne N repliques qui echouent chacune de leur cote pendant que les anciennes
+tournent encore, sur un schema a moitie migre.
+=======================================================================================
+*/}}
+{{- range $name, $svc := .Values.services }}
+{{- if and $svc.enabled $svc.migration.enabled }}
+{{- $ctx := dict "root" $ "name" $name }}
+{{/*
+Garde-fou verifie a la generation, pas seulement documente.
+
+Pointer les deux Secret au meme endroit annulerait toute la separation : le pod
+applicatif recevrait le mot de passe du proprietaire du schema et pourrait retirer les
+declencheurs qui rendent le grand livre immuable. L'erreur ne se verrait nulle part —
+la release s'installerait, les pods demarreraient, et la garantie n'existerait plus.
+
+Une regle qu'aucun mecanisme ne verifie n'est qu'une intention.
+*/}}
+{{- if eq $svc.secretName $svc.migration.secretName }}
+{{- fail (printf "services.%s : secretName et migration.secretName designent le meme Secret (%s). Le pod applicatif detiendrait alors le mot de passe du proprietaire du schema, et pourrait retirer les declencheurs d'immuabilite du grand livre. Ces deux Secret doivent porter des identifiants differents." $name $svc.secretName) }}
+{{- end }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "ocb.name" $ctx }}-migrate
+  labels:
+    {{- include "ocb.labels" $ctx | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    # Poids negatif : les migrations passent avant tout le reste de la release.
+    "helm.sh/hook-weight": "-5"
+    {{/*
+    before-hook-creation, et surtout PAS hook-succeeded.
+
+    hook-succeeded effacerait le Job des sa reussite, donc ses journaux avec lui. Le jour
+    ou une migration se comporte etrangement sans echouer, il ne resterait rien a lire.
+    before-hook-creation garde le Job jusqu'au deploiement suivant, qui le remplace.
+
+    Un Job en echec, lui, survit dans tous les cas : c'est exactement celui qu'on veut
+    pouvoir inspecter.
+    */}}
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  {{/*
+  Aucune nouvelle tentative. Flyway laisse une migration echouee inscrite dans son
+  historique ; relancer produirait un second echec, au message plus obscur que le premier,
+  et retarderait le seul geste utile — qu'un humain regarde.
+  */}}
+  backoffLimit: 0
+  activeDeadlineSeconds: {{ $.Values.migrationDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{/*
+        Libelles ecrits en clair plutot que via ocb.selectorLabels : ce helper porte deja
+        app.kubernetes.io/component, et le redefinir ici produisait une clef en double —
+        du YAML que helm lint accepte et que l'API Kubernetes refuse.
+        */}}
+        app.kubernetes.io/name: {{ $.Chart.Name }}
+        app.kubernetes.io/instance: {{ $.Release.Name }}
+        app.kubernetes.io/component: {{ $name }}-migrate
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        # UID de l'image officielle flyway/flyway.
+        runAsUser: 1000
+        runAsGroup: 1000
+      containers:
+        - name: migrate
+          image: {{ include "ocb.image" (dict "root" $ "repository" $svc.image.migrationRepository) }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          args: ["migrate"]
+          env:
+            {{- range $k, $v := $svc.migration.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+          # Le mot de passe du proprietaire vient d'ici, et n'existe nulle part ailleurs
+          # dans la release.
+          envFrom:
+            - secretRef:
+                name: {{ $svc.migration.secretName }}
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 256Mi
+{{- end }}
+{{- end }}

@@ -1,0 +1,325 @@
+# =====================================================================================
+# Open Core Banking, plateforme complete en local.
+#
+#   docker compose --env-file ../../.env up --build
+#
+# Quatre services, quatre bases, un courtier, un fournisseur d'identite. Les migrations
+# tournent dans des conteneurs separes qui s'arretent une fois leur travail fait.
+# =====================================================================================
+
+# Les ports publies sont configurables. Les valeurs par defaut sont celles du projet ;
+# un poste qui heberge deja autre chose sur 8081 n'a pas a modifier ce fichier.
+x-oidc: &oidc
+  # L'EMETTEUR est l'adresse vue depuis l'exterieur, parce que c'est elle que Keycloak
+  # inscrit dans la revendication iss des jetons qu'il emet.
+  #
+  # Les CLES, elles, sont recuperees par le reseau interne : un service qui irait chercher
+  # localhost:8090 depuis son propre conteneur s'appellerait lui-meme.
+  #
+  # Ces deux adresses different donc forcement, et c'est une seconde raison — independante
+  # du demarrage — de ne pas laisser Spring deduire l'une de l'autre.
+  OIDC_ISSUER_URI: http://localhost:8090/realms/ocb
+  OIDC_JWK_SET_URI: http://keycloak:8080/realms/ocb/protocol/openid-connect/certs
+
+x-kafka: &kafka
+  KAFKA_BOOTSTRAP: kafka:9092
+
+services:
+
+  # --- Bases de donnees : une par service, jamais partagee --------------------------
+  ledger-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ledger
+      POSTGRES_USER: ledger_owner
+      POSTGRES_PASSWORD: ${LEDGER_DB_MIGRATION_PASSWORD:-owner-secret}
+    volumes:
+      - ./postgres/ledger-init.sql:/docker-entrypoint-initdb.d/10-role.sql:ro
+      - ledger-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ledger_owner -d ledger"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  payment-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: payment
+      POSTGRES_USER: payment_owner
+      POSTGRES_PASSWORD: ${PAYMENT_DB_MIGRATION_PASSWORD:-owner-secret}
+    volumes:
+      - ./postgres/payment-init.sql:/docker-entrypoint-initdb.d/10-role.sql:ro
+      - payment-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U payment_owner -d payment"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  provider-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: provider
+      POSTGRES_USER: provider_owner
+      POSTGRES_PASSWORD: ${PROVIDER_DB_MIGRATION_PASSWORD:-owner-secret}
+    volumes:
+      - ./postgres/provider-init.sql:/docker-entrypoint-initdb.d/10-role.sql:ro
+      - provider-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U provider_owner -d provider"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  notification-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: notification
+      POSTGRES_USER: notification_owner
+      POSTGRES_PASSWORD: ${NOTIFICATION_DB_MIGRATION_PASSWORD:-owner-secret}
+    volumes:
+      - ./postgres/notification-init.sql:/docker-entrypoint-initdb.d/10-role.sql:ro
+      - notification-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U notification_owner -d notification"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # --- Courtier ---------------------------------------------------------------------
+  kafka:
+    # 3.8.1 et non 3.9 : l'entrypoint de l'image 3.9 valide la configuration complete au
+    # formatage et refuse certaines adresses annoncees. La contrainte est la meme qu'en
+    # test.
+    image: apache/kafka:3.8.1
+    ports:
+      - "${KAFKA_HOST_PORT:-29092}:29092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,PLAINTEXT_HOST://:29092
+      # Deux adresses annoncees : l'interne pour les services, l'externe pour un outil
+      # lance depuis le poste. Un courtier n'annonce pas la meme chose aux deux.
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+
+  # --- Fournisseur d'identite --------------------------------------------------------
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      # Fige l'emetteur inscrit dans les jetons. Sans cela, Keycloak le deduit de l'adresse
+      # appelee : un jeton demande depuis le poste porterait un iss different de celui
+      # demande depuis le reseau interne, et la validation echouerait selon le chemin
+      # emprunte — le genre de panne qu'on met une journee a comprendre.
+      KC_HOSTNAME: http://localhost:8090
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_PORT: 8080
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "${KEYCLOAK_HOST_PORT:-8090}:8080"
+    volumes:
+      - ./keycloak/realm-ocb.json:/opt/keycloak/data/import/realm-ocb.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && echo -e 'GET /health/ready HTTP/1.1\\nHost: localhost\\nConnection: close\\n\\n' >&3 && cat <&3 | grep -q '\"status\": \"UP\"'"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # --- Migrations : conteneurs ephemeres, identifiants du proprietaire ---------------
+  #
+  # Ces quatre conteneurs s'executent une fois et s'arretent. Ils detiennent le mot de
+  # passe du proprietaire du schema ; les services, eux, ne l'ont jamais. C'est ce qui rend
+  # effective la separation decidee en Phase 1 — l'application ne peut pas retirer ses
+  # propres garde-fous, puisqu'elle n'en a pas le pouvoir.
+  ledger-migrate:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.migrate
+      args:
+        SERVICE: ledger-service
+    environment:
+      FLYWAY_URL: jdbc:postgresql://ledger-db:5432/ledger
+      FLYWAY_USER: ledger_owner
+      FLYWAY_PASSWORD: ${LEDGER_DB_MIGRATION_PASSWORD:-owner-secret}
+      FLYWAY_SCHEMAS: ledger
+      FLYWAY_DEFAULT_SCHEMA: ledger
+      FLYWAY_PLACEHOLDERS_LEDGERAPPROLE: ${LEDGER_APP_ROLE:-ledger_app}
+    depends_on:
+      ledger-db:
+        condition: service_healthy
+
+  payment-migrate:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.migrate
+      args:
+        SERVICE: payment-service
+    environment:
+      FLYWAY_URL: jdbc:postgresql://payment-db:5432/payment
+      FLYWAY_USER: payment_owner
+      FLYWAY_PASSWORD: ${PAYMENT_DB_MIGRATION_PASSWORD:-owner-secret}
+      FLYWAY_SCHEMAS: payment
+      FLYWAY_DEFAULT_SCHEMA: payment
+      FLYWAY_PLACEHOLDERS_PAYMENTAPPROLE: ${PAYMENT_APP_ROLE:-payment_app}
+    depends_on:
+      payment-db:
+        condition: service_healthy
+
+  provider-migrate:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.migrate
+      args:
+        SERVICE: provider-service
+    environment:
+      FLYWAY_URL: jdbc:postgresql://provider-db:5432/provider
+      FLYWAY_USER: provider_owner
+      FLYWAY_PASSWORD: ${PROVIDER_DB_MIGRATION_PASSWORD:-owner-secret}
+      FLYWAY_SCHEMAS: provider
+      FLYWAY_DEFAULT_SCHEMA: provider
+      FLYWAY_PLACEHOLDERS_PROVIDERAPPROLE: ${PROVIDER_APP_ROLE:-provider_app}
+    depends_on:
+      provider-db:
+        condition: service_healthy
+
+  notification-migrate:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.migrate
+      args:
+        SERVICE: notification-service
+    environment:
+      FLYWAY_URL: jdbc:postgresql://notification-db:5432/notification
+      FLYWAY_USER: notification_owner
+      FLYWAY_PASSWORD: ${NOTIFICATION_DB_MIGRATION_PASSWORD:-owner-secret}
+      FLYWAY_SCHEMAS: notification
+      FLYWAY_DEFAULT_SCHEMA: notification
+      FLYWAY_PLACEHOLDERS_NOTIFICATIONAPPROLE: ${NOTIFICATION_APP_ROLE:-notification_app}
+    depends_on:
+      notification-db:
+        condition: service_healthy
+
+  # --- Services ---------------------------------------------------------------------
+  #
+  # Aucun ne depend de Keycloak, et ce n'est pas un oubli : depuis la Phase 5a, les cles
+  # publiques ne sont recuperees qu'au premier jeton recu. Un service demarre donc meme si
+  # le fournisseur d'identite n'est pas encore la — exactement comme il doit redemarrer
+  # pendant une panne de celui-ci.
+  ledger-service:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+      args:
+        SERVICE: ledger-service
+    environment:
+      <<: *oidc
+      LEDGER_DB_URL: jdbc:postgresql://ledger-db:5432/ledger
+      LEDGER_DB_USER: ${LEDGER_APP_ROLE:-ledger_app}
+      LEDGER_DB_PASSWORD: ${LEDGER_DB_PASSWORD:-app-secret}
+      # Le service ne migre pas : il n'en a ni le droit ni le besoin.
+      SPRING_FLYWAY_ENABLED: "false"
+    ports:
+      - "${LEDGER_HOST_PORT:-8081}:8081"
+    depends_on:
+      ledger-db:
+        condition: service_healthy
+      ledger-migrate:
+        condition: service_completed_successfully
+
+  payment-service:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+      args:
+        SERVICE: payment-service
+    environment:
+      <<: [*oidc, *kafka]
+      PAYMENT_DB_URL: jdbc:postgresql://payment-db:5432/payment
+      PAYMENT_DB_USER: ${PAYMENT_APP_ROLE:-payment_app}
+      PAYMENT_DB_PASSWORD: ${PAYMENT_DB_PASSWORD:-app-secret}
+      SPRING_FLYWAY_ENABLED: "false"
+      LEDGER_BASE_URL: http://ledger-service:8081
+      OIDC_TOKEN_URI: http://keycloak:8080/realms/ocb/protocol/openid-connect/token
+      LEDGER_CLIENT_ID: payment-service
+      LEDGER_CLIENT_SECRET: ${LEDGER_CLIENT_SECRET:-dev-only-payment-service}
+    ports:
+      - "${PAYMENT_HOST_PORT:-8082}:8082"
+    depends_on:
+      payment-db:
+        condition: service_healthy
+      payment-migrate:
+        condition: service_completed_successfully
+      kafka:
+        condition: service_healthy
+
+  provider-service:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+      args:
+        SERVICE: provider-service
+    environment:
+      <<: [*oidc, *kafka]
+      PROVIDER_DB_URL: jdbc:postgresql://provider-db:5432/provider
+      PROVIDER_DB_USER: ${PROVIDER_APP_ROLE:-provider_app}
+      PROVIDER_DB_PASSWORD: ${PROVIDER_DB_PASSWORD:-app-secret}
+      SPRING_FLYWAY_ENABLED: "false"
+      PROVIDER_CALLBACK_BASE_URL: http://provider-service:8083
+      # Sans secret, la verification de signature echoue — ce qui est le comportement
+      # voulu. Une valeur de developpement est fournie pour que la plateforme soit
+      # utilisable, jamais une valeur par defaut cote application.
+      MTN_WEBHOOK_SECRET: ${MTN_WEBHOOK_SECRET:-dev-only-mtn-secret}
+      ORANGE_WEBHOOK_SECRET: ${ORANGE_WEBHOOK_SECRET:-dev-only-orange-secret}
+    ports:
+      - "${PROVIDER_HOST_PORT:-8083}:8083"
+    depends_on:
+      provider-db:
+        condition: service_healthy
+      provider-migrate:
+        condition: service_completed_successfully
+      kafka:
+        condition: service_healthy
+
+  notification-service:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+      args:
+        SERVICE: notification-service
+    environment:
+      <<: [*oidc, *kafka]
+      NOTIFICATION_DB_URL: jdbc:postgresql://notification-db:5432/notification
+      NOTIFICATION_DB_USER: ${NOTIFICATION_APP_ROLE:-notification_app}
+      NOTIFICATION_DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD:-app-secret}
+      SPRING_FLYWAY_ENABLED: "false"
+    ports:
+      - "${NOTIFICATION_HOST_PORT:-8084}:8084"
+    depends_on:
+      notification-db:
+        condition: service_healthy
+      notification-migrate:
+        condition: service_completed_successfully
+      kafka:
+        condition: service_healthy
+
+volumes:
+  ledger-data:
+  payment-data:
+  provider-data:
+  notification-data:

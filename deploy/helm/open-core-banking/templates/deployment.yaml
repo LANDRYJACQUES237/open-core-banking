@@ -1,0 +1,168 @@
+{{- range $name, $svc := .Values.services }}
+{{- if $svc.enabled }}
+{{- $ctx := dict "root" $ "name" $name }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ocb.name" $ctx }}
+  labels:
+    {{- include "ocb.labels" $ctx | nindent 4 }}
+spec:
+  {{/*
+  Un service qui heberge le relais d'outbox ne monte pas en repliques.
+
+  Le relais garantit l'ordre par agregat en lisant ORDER BY seq dans une seule instance.
+  Deux relais concurrents, avec FOR UPDATE SKIP LOCKED, publieraient l'evenement 2 pendant
+  que l'autre tient encore le 1 : un consommateur verrait les faits dans le desordre sans
+  aucun moyen de s'en apercevoir.
+
+  La strategie Recreate en decoule. Un RollingUpdate, meme a maxSurge 1, fait coexister
+  deux pods le temps de la bascule — donc deux relais. Le prix assume est une courte
+  indisponibilite de l'API a chaque deploiement ; la sortie de ce compromis est un relais
+  extrait du service, ou une election de leader, pas un maxSurge plus permissif.
+  */}}
+  replicas: {{ if $svc.outboxRelay }}1{{ else }}{{ $svc.replicaCount }}{{ end }}
+  revisionHistoryLimit: 3
+  strategy:
+    {{- if $svc.outboxRelay }}
+    type: Recreate
+    {{- else }}
+    type: RollingUpdate
+    rollingUpdate:
+      # Aucune indisponibilite pendant la bascule : le nouveau pod doit etre pret avant
+      # que l'ancien ne parte.
+      maxUnavailable: 0
+      maxSurge: 1
+    {{- end }}
+  selector:
+    matchLabels:
+      {{- include "ocb.selectorLabels" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "ocb.selectorLabels" $ctx | nindent 8 }}
+      {{- with $.Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with $.Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if $.Values.serviceAccount.create }}
+      serviceAccountName: {{ $.Release.Name }}-platform
+      {{- end }}
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: {{ $name }}
+          image: {{ include "ocb.image" (dict "root" $ "repository" $svc.image.repository) }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          securityContext:
+            {{- include "ocb.containerSecurityContext" . | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ $svc.port }}
+          env:
+            - name: OIDC_ISSUER_URI
+              value: {{ $.Values.oidc.issuerUri | quote }}
+            {{/*
+            Renseigner l'adresse des cles rend leur resolution PARESSEUSE : le service ne
+            contacte le fournisseur d'identite qu'au premier jeton recu. Sans elle, un
+            fournisseur indisponible empeche tout pod de demarrer — donc de redemarrer au
+            moment precis ou on en aurait besoin.
+            */}}
+            - name: OIDC_JWK_SET_URI
+              value: {{ $.Values.oidc.jwkSetUri | quote }}
+            {{- if $svc.kafka }}
+            - name: KAFKA_BOOTSTRAP
+              value: {{ $.Values.kafka.bootstrap | quote }}
+            {{- end }}
+            {{/*
+            Les valeurs passent par tpl : une adresse interne comme celle du grand livre
+            depend du nom de la release, qu'un values.yaml fige ne peut pas connaitre.
+            Ecrire ocb-ledger en dur marcherait pour une release nommee ocb, et pour elle
+            seule.
+            */}}
+            {{- range $k, $v := $svc.env }}
+            - name: {{ $k }}
+              value: {{ tpl (printf "%v" $v) $ | quote }}
+            {{- end }}
+          {{/*
+          Tout ce qui est sensible arrive d'ici, et de nulle part ailleurs. Ce Secret est
+          cree hors du chart : rien dans values.yaml, rien dans l'historique de la release.
+          */}}
+          envFrom:
+            - secretRef:
+                name: {{ $svc.secretName }}
+          {{/*
+          Trois sondes, trois roles distincts.
+
+          startupProbe couvre le demarrage d'une JVM Spring, qui prend plusieurs dizaines
+          de secondes. Sans elle, il faudrait relacher livenessProbe au point de la rendre
+          inutile en regime etabli.
+
+          livenessProbe ne depend d'AUCUN systeme externe. Elle fait redemarrer le pod ; si
+          elle dependait de la base ou du courtier, une coupure de ceux-ci ferait redemarrer
+          en boucle des processus parfaitement sains, ajoutant une panne a une panne.
+
+          readinessProbe, elle, inclut les dependances : un pod qui ne peut pas travailler
+          doit sortir du service sans etre tue.
+          */}}
+          startupProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 5
+            failureThreshold: 3
+          {{/*
+          Memoire : requete egale limite. Une JVM dimensionne son tas sur la limite du
+          cgroup (MaxRAMPercentage dans l'image) ; une limite superieure a la requete
+          l'inciterait a prendre une place que le noeud ne lui garantit pas.
+
+          Processeur : requete sans limite. Une limite CPU se traduit par du throttling
+          pendant les pics — dont le demarrage de la JVM — sans rien proteger que la
+          requete ne protege deja.
+          */}}
+          resources:
+            {{- toYaml $svc.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        # La racine est en lecture seule ; Tomcat et la JVM ont besoin d'un repertoire
+        # temporaire inscriptible, et lui seul.
+        - name: tmp
+          emptyDir: {}
+      {{- with $.Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $.Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $.Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
+{{- end }}
