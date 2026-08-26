@@ -1,7 +1,45 @@
 # Open Core Banking — Document d'architecture (Phase 0)
 
-> Statut : **proposition à valider**. Aucune ligne de code n'est écrite tant que ce document n'est pas approuvé.
-> Version 0.1 — 2026-08-21
+> **Document historique. Il décrit ce qui allait être construit, pas ce qui l'a été.**
+>
+> Écrit le 2026-08-21, avant la première ligne de code, et conservé **tel quel**.
+>
+> Pour l'état courant du système, lire le [README racine](../README.md), puis le README du
+> service qui vous intéresse.
+
+Ce document n'est pas mis à jour, et c'est délibéré. Le réécrire au fil des phases
+effacerait la seule chose qu'il apporte encore : la trace de ce qui a été anticipé, de ce
+qui a été mal anticipé, et de ce qui n'avait pas été vu. Un document d'architecture
+retouché après coup a toujours raison ; c'est ce qui le rend inutile.
+
+Il reste la meilleure lecture pour trois choses, qui n'ont pas bougé : le **modèle
+comptable** (§4), les **schémas de données** (§5) et le **contrat d'événements** (§6).
+
+### Ce que le code a tranché autrement
+
+| Où | Ce que ce document annonçait | Ce qui s'est passe |
+|---|---|---|
+| D7, §12 | Debezium CDC remplace le polling en Phase 5 | **Pas fait.** Le relais interroge toujours la table. La table reste compatible Debezium, mais le remplacement n'a pas eu lieu et ne doit pas être présenté comme acquis |
+| §12 | Phase 5 : Prometheus, Grafana, Jaeger | **Partiel.** Les services exposent `/actuator/prometheus` avec des métriques métier ; aucune pile d'observabilité n'est déployée, et aucune trace distribuée n'existe |
+| §12 | ADR rédigés **au fil de l'eau**, pas à la fin | **Pas tenu.** Voir la note ci-dessous |
+| §13 Q1–Q8 | Huit questions ouvertes | Toutes tranchées, dans le sens recommandé. Q8 : JDK 21 en cible, JDK 25 en local |
+
+Trois règles importantes n'apparaissent nulle part ici, parce qu'elles ont été découvertes
+en construisant : le **verrou de portefeuille en base** (l'interdiction de découvert n'était
+pas modélisée), l'**identifiant de transaction dérivé de la clé d'idempotence** (une panne
+entre l'écriture distante et la validation locale rendait un double débit possible), et le
+fait qu'une **saga n'a pas de branche « en cas de doute »**.
+
+### Sur les ADR écrits à la fin
+
+Le §12 de ce document met en garde contre exactement ce qui a été fait : les ADR ont été
+rédigés en Phase 6, pas au moment des décisions. La mise en garde était juste, et elle est
+laissée ici plutôt que retirée.
+
+Ce qui limite les dégâts : chaque ADR renvoie au **commit** où la décision a pris effet, et
+ces messages de commit sont contemporains de la décision. Chaque ADR doit aussi nommer
+l'alternative réellement écartée et **ce qui le ferait revenir** — sans quoi il ne serait
+qu'une justification, et n'aurait pas été écrit.
 
 ---
 
