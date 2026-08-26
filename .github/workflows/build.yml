@@ -49,8 +49,25 @@ jobs:
           fi
           echo "Aucun fichier sensible versionne."
 
-      - name: Verifier que le wrapper Maven est executable
-        run: chmod +x ./mvnw
+      # Une VERIFICATION, pas une correction.
+      #
+      # Cette etape faisait auparavant `chmod +x ./mvnw`, ce qui reparait le symptome a
+      # chaque execution et masquait la cause : mvnw etait a 100644 dans l'index git.
+      # Sous Windows, le systeme de fichiers le rapporte executable et tout passe en
+      # local ; sur Linux, la construction de l'image sortait en 126 avec un
+      # « Permission denied » qui ne designait pas sa cause.
+      #
+      # Le mode est desormais correct dans l'index. Cette etape existe pour que sa
+      # regression echoue bruyamment plutot que d'etre reparee en silence.
+      - name: Le wrapper Maven est executable dans l'index git
+        run: |
+          mode=$(git ls-files -s mvnw | cut -d' ' -f1)
+          if [ "$mode" != "100755" ]; then
+            echo "::error::mvnw est a $mode dans l'index git, il doit etre a 100755."
+            echo "::error::Corriger avec : git update-index --chmod=+x mvnw"
+            exit 1
+          fi
+          echo "mvnw est executable ($mode)."
 
       # `verify` execute les deux suites : surefire (unitaires, sans Docker) puis
       # failsafe (integration, Testcontainers). Docker est preinstalle sur les
