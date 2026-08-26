@@ -4,8 +4,9 @@
 >
 > Écrit le 2026-08-21, avant la première ligne de code, et conservé **tel quel**.
 >
-> Pour l'état courant du système, lire le [README racine](../README.md), puis le README du
-> service qui vous intéresse.
+> Pour l'état courant du système, lire dans cet ordre : le [README racine](../README.md),
+> l'[architecture construite](ARCHITECTURE.md), les [décisions](adr/README.md), le
+> [guide de démarrage](DEMARRAGE.md), puis le README du service qui vous intéresse.
 
 Ce document n'est pas mis à jour, et c'est délibéré. Le réécrire au fil des phases
 effacerait la seule chose qu'il apporte encore : la trace de ce qui a été anticipé, de ce

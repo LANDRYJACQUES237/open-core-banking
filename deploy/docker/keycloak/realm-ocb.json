@@ -143,7 +143,7 @@
   "clients": [
     {
       "clientId": "payment-service",
-      "description": "Compte de service du moteur de paiement. Seul detenteur de ledger:post : aucun marchand ne peut passer d'ecriture comptable.",
+      "description": "Compte de service du moteur de paiement. Seul detenteur de ledger:post : aucun marchand ne peut passer d'ecriture comptable. Porte aussi ledger:read, parce que l'interdiction de decouvert exige de lire le solde du portefeuille avant d'engager les fonds.",
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": false,
@@ -153,7 +153,8 @@
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "defaultClientScopes": [
-        "ledger:post"
+        "ledger:post",
+        "ledger:read"
       ],
       "optionalClientScopes": [],
       "attributes": {
@@ -167,6 +168,26 @@
       "protocol": "openid-connect",
       "publicClient": false,
       "secret": "dev-only-merchant-demo",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "defaultClientScopes": [
+        "payment:initiate",
+        "payment:read"
+      ],
+      "optionalClientScopes": [],
+      "attributes": {
+        "access.token.lifespan": "300"
+      }
+    },
+    {
+      "clientId": "merchant-second",
+      "description": "Second marchand. Existe pour une seule raison : demontrer que deux appelants qui choisissent la meme cle d'idempotence obtiennent deux transactions distinctes, et non celle de l'autre.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "dev-only-merchant-second",
       "serviceAccountsEnabled": true,
       "standardFlowEnabled": false,
       "implicitFlowEnabled": false,

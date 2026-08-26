@@ -123,3 +123,58 @@ jobs:
             exit 1
           fi
           echo "Le garde-fou a bien refuse la configuration."
+
+  # La documentation pourrit en silence.
+  #
+  # Un lien relatif casse par un renommage et un diagramme Mermaid invalide ne se voient
+  # qu'une fois la page publiee — le second sous la forme d'une boite d'erreur rouge.
+  documentation:
+    name: Liens et diagrammes
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Recuperer le depot
+        uses: actions/checkout@v4
+
+      # Une erreur de guillemet dans un script shell ne se voit qu'a l'execution, et
+      # parfois seulement a mi-parcours. Deux secondes ici valent mieux qu'un travail de
+      # vingt minutes interrompu au milieu.
+      - name: Les scripts shell sont syntaxiquement valides
+        run: |
+          bash -n deploy/parcours.sh
+          bash -n docs/verifier.sh
+
+      - name: Liens relatifs et diagrammes Mermaid
+        run: ./docs/verifier.sh
+
+  # Le parcours de bout en bout, sur la plateforme reellement assemblee.
+  #
+  # C'est ce qui empeche docs/DEMARRAGE.md de mentir : le guide decrit des resultats, et ce
+  # travail exige que la plateforme les produise encore. Il construit les quatre images et
+  # demarre toute la pile, donc il est long — c'est le prix d'une documentation verifiee
+  # plutot que relue.
+  parcours:
+    name: Parcours sur la plateforme assemblee
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Recuperer le depot
+        uses: actions/checkout@v4
+
+      - name: Construire et demarrer la plateforme
+        run: docker compose -f deploy/docker/docker-compose.yml up -d --build
+
+      - name: Parcours
+        run: ./deploy/parcours.sh
+
+      # Les journaux ne servent que si le parcours a echoue, et c'est precisement le
+      # moment ou ils sont introuvables autrement : la pile est arretee juste apres.
+      - name: Journaux, en cas d'echec
+        if: failure()
+        run: docker compose -f deploy/docker/docker-compose.yml logs --tail 200
+
+      - name: Arreter la plateforme
+        if: always()
+        run: docker compose -f deploy/docker/docker-compose.yml down -v

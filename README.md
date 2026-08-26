@@ -79,6 +79,11 @@ etait vide, la ligne serait une intention.
 PostgreSQL et de vrais Kafka par Testcontainers : une contrainte differee, des droits
 PostgreSQL et un rebalancement de consommateurs n'ont aucun sens face a une doublure.
 
+Et parce qu'une garantie verifiee en test peut disparaitre a l'assemblage, un **parcours de
+bout en bout** rejoue ces proprietes sur la plateforme reellement demarree — dix etapes,
+executees a chaque push contre une pile fraichement construite. Voir
+[docs/DEMARRAGE.md](docs/DEMARRAGE.md).
+
 ---
 
 ## Architecture
@@ -105,6 +110,10 @@ sont les evenements metier de `payment-service`.
 **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** contient les niveaux C4 — contexte,
 conteneurs, composants de `payment-service` — la machine a etats complete, et le
 decaissement de bout en bout avec ses trois issues.
+
+**[docs/adr/](docs/adr/README.md)** contient les dix decisions qui avaient une tension
+reelle. Chacune nomme l'alternative ecartee, ce que le choix coute, et **ce qui le ferait
+revenir** — une decision sans condition de retour est un dogme.
 
 Deux points de decoupage meritent d'etre lus avant le code :
 
@@ -140,12 +149,19 @@ Ajoute les tests d'integration, qui demandent un demon Docker.
 ### La plateforme complete
 
 ```bash
-docker compose -f deploy/docker/docker-compose.yml up --build
+docker compose -f deploy/docker/docker-compose.yml up -d --build
+./deploy/parcours.sh
 ```
 
-Quatre services, quatre bases, un courtier, un fournisseur d'identite avec son realm.
-Les ports publies sont configurables. Voir **[deploy/README.md](deploy/README.md)** pour
-le detail, et notamment pourquoi les migrations tournent dans une image separee.
+Quatre services, quatre bases, un courtier, un fournisseur d'identite avec son realm — puis
+dix etapes qui verifient que les garanties tiennent sur la plateforme assemblee : audience
+refusee, rejeu idempotent, cloisonnement entre marchands, grand livre irreecrivable, deux
+decaissements concurrents dont un seul passe, et un service qui redemarre pendant une panne
+du fournisseur d'identite.
+
+**[docs/DEMARRAGE.md](docs/DEMARRAGE.md)** explique ce que chaque etape prouve.
+**[deploy/README.md](deploy/README.md)** couvre les images, les ports et la separation des
+utilisateurs de base.
 
 Pour lancer un service seul, voir son README :
 [ledger-service](services/ledger-service/README.md) ·
@@ -165,7 +181,7 @@ Pour lancer un service seul, voir son README :
 | 3 | `provider-service` : abstraction operateur, webhooks, interrogation, securite OIDC | Termine |
 | 4 | Saga de decaissement, transfert atomique, `notification-service` | Termine |
 | 5 | Images, Compose, chart Helm, sondes, metriques metier | Termine |
-| 6 | Documentation, diagrammes C4, decisions, guide de demarrage | En cours |
+| 6 | Documentation, diagrammes C4, decisions, parcours verifie | Termine |
 
 ### Ce qui n'est pas fait, et qu'il serait malhonnete de laisser croire
 
@@ -188,8 +204,8 @@ Pour lancer un service seul, voir son README :
 contracts/        contrats OpenAPI et schemas d'evenements — source de verite
 platform/         plomberie technique partagee, sans aucune logique metier
 services/         services deployables, une base par service
-deploy/           images, Compose, chart Helm
-docs/             architecture et decisions
+deploy/           images, Compose, chart Helm, parcours de verification
+docs/             architecture, decisions, guide de demarrage
 .github/          integration continue
 ```
 

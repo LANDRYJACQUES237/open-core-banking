@@ -36,6 +36,30 @@ n'emprunte jamais, donc que personne ne remarque.
 
 ---
 
+## Verifier que la plateforme tient ses promesses
+
+```bash
+./parcours.sh
+```
+
+`parcours.sh` n'est pas une demonstration : c'est une **suite d'assertions** sur la
+plateforme demarree. Dix etapes — audience refusee, rejeu idempotent, cloisonnement entre
+deux marchands, grand livre irreecrivable par ses deux utilisateurs, deux decaissements
+concurrents dont un seul passe, et un service qui redemarre pendant une panne du
+fournisseur d'identite.
+
+L'integration continue l'execute a chaque push contre une pile fraichement construite. Un
+guide de demarrage que personne n'execute decrit le systeme tel qu'il etait le jour ou il a
+ete ecrit ; celui-ci echoue si la plateforme cesse de se comporter comme il l'annonce.
+
+Il l'a deja prouve : c'est ce parcours qui a trouve la portee `ledger:read` manquante du
+compte de service, un defaut invisible en test unitaire comme en test d'integration, parce
+qu'il ne vivait que dans la configuration du realm.
+
+[docs/DEMARRAGE.md](../docs/DEMARRAGE.md) explique ce que chaque etape prouve.
+
+---
+
 ## Ce qui migre n'est pas ce qui sert
 
 C'est la decision structurante de ce dossier.
@@ -103,9 +127,18 @@ chemin emprunte.
 
 | Client | Portees | Role |
 |---|---|---|
-| `payment-service` | `ledger:post` | Compte de service du moteur de paiement, **seul detenteur** du droit d'ecrire au grand livre |
+| `payment-service` | `ledger:post`, `ledger:read` | Compte de service du moteur de paiement, **seul detenteur** du droit d'ecrire au grand livre |
 | `merchant-demo` | `payment:initiate`, `payment:read` | Marchand : demande des operations, ne touche jamais au grand livre |
+| `merchant-second` | `payment:initiate`, `payment:read` | Second marchand. Existe pour une seule raison : prouver que deux appelants qui choisissent la meme cle d'idempotence obtiennent deux transactions distinctes |
 | `ops-console` | `ledger:read`, `provider:read`, `notification:read` | Exploitation, lecture seule |
+
+`payment-service` porte aussi `ledger:read`, et pas seulement `ledger:post` : l'interdiction
+de decouvert exige de **lire le solde** du portefeuille avant d'engager les fonds. Cette
+portee manquait, et rien ne le signalait — Keycloak refuse la demande de jeton entiere avec
+`invalid_scope`, si bien que l'echec se presentait comme un `500` au moment du decaissement,
+loin de sa cause. C'est le parcours de verification qui l'a trouve : l'encaissement, lui,
+n'appelle le grand livre qu'a la confirmation de l'operateur, et ne touchait donc pas ce
+chemin.
 
 **L'audience est attachee a la portee, pas au client.** Chaque portee porte un mappeur qui
 ajoute l'audience du service qu'elle ouvre : un client qui gagne `ledger:post` gagne
