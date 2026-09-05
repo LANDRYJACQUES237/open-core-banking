@@ -1,0 +1,122 @@
+# =====================================================================================
+# Poste de pilotage temporaire.
+#
+# A appliquer quand on dispose d'une interface Kubernetes (Headlamp, Lens, le tableau de
+# bord) mais d'aucun kubeconfig local. Il fournit un terminal ou `helm` et `kubectl`
+# fonctionnent, ce qui rend possible ce qu'une interface graphique ne sait pas faire :
+# installer une release, honorer les hooks `pre-install`, et mettre a jour.
+#
+# C'est important ici et pas seulement pratique. Le `Job` de migration est un hook Helm :
+# appliquer les manifestes un par un a la main perdrait la garantie qui compte — si la
+# migration echoue, la release echoue et les nouveaux pods ne sont jamais deployes.
+#
+# ------------------------------------------------------------------------------------
+# **Ce pod est temporaire. Il se supprime des le deploiement termine.**
+#
+#     kubectl -n ocb delete -f bastion.yaml     (ou depuis l'interface)
+#
+# Un pod qui detient les droits d'administration d'un namespace est un moyen d'elevation
+# de privileges pour qui prendrait la main dessus. Le laisser tourner « au cas ou » revient
+# a laisser une session administrateur ouverte.
+# ------------------------------------------------------------------------------------
+#
+# Les droits sont volontairement bornes au namespace `ocb` : un `RoleBinding`, pas un
+# `ClusterRoleBinding`. Sur un cluster partage, un compte de service capable d'agir partout
+# n'est pas justifie par le fait de deployer une application quelque part.
+#
+# Si l'installation d'un operateur a l'echelle du cluster s'avere necessaire — cert-manager,
+# un operateur PostgreSQL — c'est une decision distincte, qui affecte les autres
+# utilisateurs et merite d'etre prise sciemment plutot que d'etre incluse ici par commodite.
+# =====================================================================================
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ocb
+  labels:
+    app.kubernetes.io/part-of: open-core-banking
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ocb-bastion
+  namespace: ocb
+automountServiceAccountToken: true
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ocb-bastion
+  namespace: ocb
+subjects:
+  - kind: ServiceAccount
+    name: ocb-bastion
+    namespace: ocb
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  # `admin` est un role predefini de Kubernetes. Utilise dans un RoleBinding, sa portee
+  # reste le namespace : il permet tout dans `ocb` et rien au-dela.
+  name: admin
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ocb-bastion
+  namespace: ocb
+  labels:
+    app.kubernetes.io/name: ocb-bastion
+spec:
+  serviceAccountName: ocb-bastion
+  restartPolicy: Never
+  # Le pod s'eteint tout seul apres quatre heures. Un poste de pilotage oublie est le
+  # genre de chose qui reste six mois.
+  activeDeadlineSeconds: 14400
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    fsGroup: 65532
+  containers:
+    - name: shell
+      # helm et kubectl dans une image alpine. La version est epinglee : un poste de
+      # pilotage qui change de version entre deux sessions produit des surprises.
+      image: dtzar/helm-kubectl:3.16.2
+      command: ["sleep", "infinity"]
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: [ALL]
+        seccompProfile:
+          type: RuntimeDefault
+      env:
+        # L'image ecrit son cache et sa configuration Helm sous $HOME ; la racine etant en
+        # lecture seule, on les dirige vers le volume ephemere.
+        - name: HOME
+          value: /travail
+        - name: HELM_CACHE_HOME
+          value: /travail/.cache/helm
+        - name: HELM_CONFIG_HOME
+          value: /travail/.config/helm
+        - name: HELM_DATA_HOME
+          value: /travail/.local/share/helm
+      volumeMounts:
+        - name: travail
+          mountPath: /travail
+        - name: tmp
+          mountPath: /tmp
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          memory: 512Mi
+  volumes:
+    - name: travail
+      emptyDir: {}
+    - name: tmp
+      emptyDir: {}
