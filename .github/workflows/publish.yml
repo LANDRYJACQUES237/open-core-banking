@@ -1,0 +1,107 @@
+name: publier les images
+
+# Un cluster ne construit pas : il tire. Ce travail publie les huit images sur GHCR, le
+# registre du depot, pour qu'un deploiement Kubernetes ait quelque chose a tirer.
+#
+# Huit et non quatre : chaque service a son image applicative ET son image de migration,
+# et c'est tout le propos de la separation decidee en Phase 5 — ce qui migre n'est pas ce
+# qui sert, et les deux ne detiennent pas les memes identifiants.
+
+on:
+  push:
+    branches: [master, main]
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: publier-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  images:
+    name: ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: ledger-service
+            service: ledger-service
+            dockerfile: deploy/docker/Dockerfile
+          - image: payment-service
+            service: payment-service
+            dockerfile: deploy/docker/Dockerfile
+          - image: provider-service
+            service: provider-service
+            dockerfile: deploy/docker/Dockerfile
+          - image: notification-service
+            service: notification-service
+            dockerfile: deploy/docker/Dockerfile
+          - image: ledger-migrate
+            service: ledger-service
+            dockerfile: deploy/docker/Dockerfile.migrate
+          - image: payment-migrate
+            service: payment-service
+            dockerfile: deploy/docker/Dockerfile.migrate
+          - image: provider-migrate
+            service: provider-service
+            dockerfile: deploy/docker/Dockerfile.migrate
+          - image: notification-migrate
+            service: notification-service
+            dockerfile: deploy/docker/Dockerfile.migrate
+
+    steps:
+      - name: Recuperer le depot
+        uses: actions/checkout@v4
+
+      - name: Preparer buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Le jeton est fourni par GitHub pour la duree du travail. Aucun secret de registre
+      # n'est stocke dans le depot ni dans les parametres.
+      - name: S'authentifier aupres de GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Le proprietaire est mis en minuscules : GHCR refuse les majuscules dans un nom
+      # d'image, alors que le nom de compte GitHub en contient.
+      - name: Calculer le nom de l'image
+        id: nom
+        run: echo "ref=ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/${{ matrix.image }}" >> "$GITHUB_OUTPUT"
+
+      - name: Etiquettes
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.nom.outputs.ref }}
+          # Le SHA est l'etiquette qui compte : c'est la seule qui designe un contenu
+          # precis. `latest` est une commodite de lecture, jamais ce qu'un deploiement
+          # devrait epingler.
+          tags: |
+            type=sha,format=long
+            type=ref,event=tag
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Construire et publier
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          build-args: SERVICE=${{ matrix.service }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Le cache est partage entre les executions. Les quatre images applicatives ont
+          # une etape de construction identique : la premiere le remplit, les suivantes le
+          # reutilisent au lieu de recompiler le reacteur Maven.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
