@@ -97,6 +97,13 @@ spec:
           imagePullPolicy: {{ $.Values.image.pullPolicy }}
           securityContext:
             allowPrivilegeEscalation: false
+            # Les Deployment portaient cette ligne, pas les Job : le gabarit du Job a son
+            # propre contexte de securite, et l'oubli ne se voyait nulle part. C'est
+            # l'analyse de configuration qui l'a signale.
+            #
+            # Verifie avant d'etre impose : Flyway lit ses migrations et se connecte sans
+            # rien ecrire hors de /tmp.
+            readOnlyRootFilesystem: true
             capabilities:
               drop: [ALL]
             seccompProfile:
@@ -118,5 +125,12 @@ spec:
               memory: 256Mi
             limits:
               memory: 256Mi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        # La racine etant en lecture seule, le seul chemin inscriptible est explicite.
+        - name: tmp
+          emptyDir: {}
 {{- end }}
 {{- end }}

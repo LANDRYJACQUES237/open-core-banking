@@ -90,4 +90,6 @@ jobs:
           scan-ref: .
           severity: HIGH,CRITICAL
           exit-code: '1'
-          trivy-config: ''
+          # Les constats acceptes, chacun avec sa raison ecrite. Ce fichier ne baisse pas
+          # le seuil : il documente ce qui a ete examine puis assume.
+          trivyignores: .trivyignore.yaml

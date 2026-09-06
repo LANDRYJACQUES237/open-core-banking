@@ -1,0 +1,66 @@
+# =====================================================================================
+# Constats acceptes, avec leur raison.
+#
+# Ce fichier n'existe pas pour faire passer l'analyse. Chaque entree dit POURQUOI le
+# constat est accepte, et ce qu'il faudrait pour le lever. Un constat sans justification
+# n'a pas sa place ici : il faut le corriger.
+#
+# Ce qui a ete CORRIGE plutot qu'ignore, au moment ou l'analyse l'a signale :
+#   - l'image de migration s'executait en root. Elle cree desormais son utilisateur.
+#   - les Job de migration n'avaient pas de racine en lecture seule, alors que les
+#     Deployment l'avaient. Verifie : Flyway fonctionne ainsi.
+# =====================================================================================
+
+misconfigurations:
+
+  # --- Racine inscriptible : trois images amont l'exigent ------------------------------
+  #
+  # Dans les trois cas, l'entrypoint de l'image ecrit hors des volumes montes. Monter un
+  # volume ephemere par-dessus ces chemins masquerait les fichiers que l'image y place, et
+  # empecherait le demarrage.
+  #
+  # Ce que cela coute : un attaquant qui execute du code dans le conteneur peut y ecrire.
+  # Ce que cela ne donne pas : l'elevation de privileges reste bloquee par
+  # allowPrivilegeEscalation: false, le retrait de toutes les capacites, et l'execution
+  # sous un utilisateur non root.
+  #
+  # Pour lever ces constats il faudrait, pour chaque image, un conteneur d'initialisation
+  # qui recopie les fichiers de configuration dans un volume ephemere. C'est faisable et ce
+  # n'est pas fait.
+
+  - id: KSV-0014
+    paths:
+      - "deploy/k8s/01-postgres.yaml"
+    statement: >-
+      L'entrypoint de postgres:16-alpine ecrit dans /var/run/postgresql et /tmp avant meme
+      d'initialiser la base. Verifie : le conteneur ne demarre pas avec une racine en
+      lecture seule.
+
+  - id: KSV-0014
+    paths:
+      - "deploy/k8s/02-kafka.yaml"
+    statement: >-
+      L'entrypoint d'apache/kafka genere sa configuration dans /opt/kafka/config a partir
+      des variables d'environnement. Verifie : le demarrage s'arrete sur
+      "/opt/kafka/config/ file not writable". Ce repertoire contient aussi des fichiers de
+      l'image, qu'un volume ephemere masquerait.
+
+  - id: KSV-0014
+    paths:
+      - "deploy/k8s/03-keycloak.yaml"
+    statement: >-
+      Keycloak en mode production execute une etape de construction au demarrage, qui ecrit
+      sous /opt/keycloak. C'est le prix du mode production, prefere ici au mode
+      developpement pour de meilleures raisons.
+
+  # --- Faux positif -------------------------------------------------------------------
+
+  - id: KSV-0109
+    paths:
+      - "deploy/k8s/01-postgres.yaml"
+    statement: >-
+      Le ConfigMap contient un script shell qui REFERENCE des variables nommees
+      *_PASSWORD ; il n'en contient aucune valeur. Les mots de passe arrivent par envFrom
+      depuis le Secret ocb-postgres-init. C'est precisement pour cela que le script est un
+      shell et non du SQL : ecrire les valeurs en SQL les aurait figees dans ce ConfigMap,
+      qui n'est pas un Secret.
