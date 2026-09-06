@@ -16,10 +16,25 @@
 # meme qu'en test et qu'en Compose, et changer de version demande de la reverifier.
 # =====================================================================================
 
+# -------------------------------------------------------------------------------------
+# **Le namespace est inscrit dans ce fichier, et doit correspondre a la cible.**
+#
+# Une interface graphique qui applique un manifeste sans namespace le depose dans
+# `default`, pas dans le namespace affiche a l'ecran. L'echec ressemble alors a
+#
+#     ... is forbidden: User "..." cannot update resource "..." in the namespace "default"
+#
+# Pour tout aligner d'un coup :
+#
+#     sed -i 's/^  namespace: ocb$/  namespace: VOTRE-NAMESPACE/' deploy/k8s/*.yaml
+# -------------------------------------------------------------------------------------
+#
+
 apiVersion: v1
 kind: Service
 metadata:
   name: ocb-kafka
+  namespace: ocb
   labels:
     app.kubernetes.io/name: ocb-kafka
     app.kubernetes.io/part-of: open-core-banking
@@ -41,6 +56,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: ocb-kafka
+  namespace: ocb
   labels:
     app.kubernetes.io/name: ocb-kafka
     app.kubernetes.io/part-of: open-core-banking
