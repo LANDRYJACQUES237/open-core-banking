@@ -108,8 +108,14 @@ EOF
 # place ; relancer le script avec un autre namespace fonctionne, puisque la valeur
 # precedente est elle aussi reconnue.
 printf 'Retargetage des manifestes ecrits a la main...\n'
-for f in deploy/k8s/01-postgres.yaml deploy/k8s/02-kafka.yaml \
-         deploy/k8s/03-keycloak.yaml deploy/k8s/bastion.yaml; do
+#
+# Un motif plutot qu'une liste. Une liste figee oublie le fichier suivant, et l'oubli
+# se manifeste par un refus de droit sur un namespace inexistant — un message qui ne
+# designe pas sa cause. C'est arrive avec 06-verification.yaml, ajoute apres coup.
+#
+# Les fichiers rendus (04, 05) sont inclus sans consequence : ils sont regeneres juste
+# apres, avec le bon namespace.
+for f in deploy/k8s/*.yaml; do
     sed -i -E "s/^  namespace: [A-Za-z0-9-]+$/  namespace: $NAMESPACE/" "$f"
 done
 
