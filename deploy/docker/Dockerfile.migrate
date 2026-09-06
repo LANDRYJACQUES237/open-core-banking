@@ -20,7 +20,7 @@
 # faible que celui d'une application capable de reecrire son propre schema.
 # =====================================================================================
 
-FROM flyway/flyway:11-alpine
+FROM flyway/flyway:13-alpine
 
 ARG SERVICE
 RUN test -n "$SERVICE" || (echo "L'argument SERVICE est obligatoire" && false)
