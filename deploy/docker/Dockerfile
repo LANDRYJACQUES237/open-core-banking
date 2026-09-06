@@ -51,7 +51,7 @@ COPY services services
 RUN MAVEN_CONFIG= ./mvnw -B -ntp -DskipTests package
 
 # --- Execution -----------------------------------------------------------------------
-FROM eclipse-temurin:21-jre-alpine AS runtime
+FROM eclipse-temurin:25-jre-alpine AS runtime
 
 ARG SERVICE
 RUN test -n "$SERVICE" || (echo "L'argument SERVICE est obligatoire" && false)
