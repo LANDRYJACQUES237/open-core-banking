@@ -34,7 +34,7 @@ jobs:
 
     steps:
       - name: Recuperer le depot
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Installer le JDK 21
         uses: actions/setup-java@v4
@@ -68,7 +68,7 @@ jobs:
 
     steps:
       - name: Recuperer le depot
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Dockerfiles, chart Helm et manifestes Kubernetes. L'analyse echoue sur HIGH et
       # CRITICAL plutot que de se contenter de rapporter : un rapport que personne ne lit
