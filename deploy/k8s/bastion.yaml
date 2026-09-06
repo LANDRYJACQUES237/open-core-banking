@@ -44,7 +44,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: ocb-bastion
-  namespace: ocb
+  namespace: test
 automountServiceAccountToken: true
 
 ---
@@ -52,11 +52,11 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: ocb-bastion
-  namespace: ocb
+  namespace: test
 subjects:
   - kind: ServiceAccount
     name: ocb-bastion
-    namespace: ocb
+    namespace: test
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -69,7 +69,7 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: ocb-bastion
-  namespace: ocb
+  namespace: test
   labels:
     app.kubernetes.io/name: ocb-bastion
 spec:

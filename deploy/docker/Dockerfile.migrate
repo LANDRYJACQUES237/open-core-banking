@@ -25,9 +25,21 @@ FROM flyway/flyway:11-alpine
 ARG SERVICE
 RUN test -n "$SERVICE" || (echo "L'argument SERVICE est obligatoire" && false)
 
+# Utilisateur sans privileges, cree ici parce que l'image amont n'en fournit aucun.
+#
+# Sans cette ligne, la migration s'execute en root. Le chart Helm impose bien un
+# runAsUser, mais faire reposer la seule protection sur l'appelant est fragile : sous
+# Docker Compose, ou pour quiconque lance l'image a la main, elle tournerait en root
+# contre la base qui detient le grand livre.
+#
+# Le meme UID que l'image applicative, pour qu'un seul numero soit a retenir.
+RUN addgroup -g 10001 -S ocb && adduser -u 10001 -S -G ocb ocb
+
 # Seules les migrations sont copiees. Pas de jar, pas de configuration applicative : cette
 # image ne peut rien faire d'autre que migrer.
-COPY services/${SERVICE}/src/main/resources/db/migration /flyway/sql
+COPY --chown=10001:10001 services/${SERVICE}/src/main/resources/db/migration /flyway/sql
+
+USER 10001:10001
 
 # Le reste — URL, identifiants, schema, espaces reserves — arrive par l'environnement, donc
 # depuis un Secret. Rien de sensible n'est inscrit dans l'image.

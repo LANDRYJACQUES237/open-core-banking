@@ -1,0 +1,38 @@
+# Une dependance vulnerable ne se signale pas toute seule.
+#
+# Le regroupement des mises a jour mineures et correctives evite de noyer le depot sous
+# des demandes de fusion : ce qui doit se voir, ce sont les montees de version majeures et
+# les correctifs de securite, pas un incrementiel de patch par bibliotheque.
+
+version: 2
+updates:
+
+  - package-ecosystem: maven
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      mineures-et-correctives:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "deps"
+
+  # Une action epinglee sur une etiquette mobile est une dependance dont le contenu peut
+  # changer sans que rien ne le signale.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "deps(ci)"
+
+  # Les images de base : JRE, Maven, Flyway. Une vulnerabilite du systeme de base ne se
+  # voit pas dans le code applicatif.
+  - package-ecosystem: docker
+    directories:
+      - /deploy/docker
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "deps(images)"

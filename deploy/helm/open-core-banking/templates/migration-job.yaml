@@ -81,9 +81,12 @@ spec:
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
-        # UID de l'image officielle flyway/flyway.
-        runAsUser: 1000
-        runAsGroup: 1000
+        # UID cree dans Dockerfile.migrate. L'image amont flyway/flyway ne definit aucun
+        # utilisateur non privilegie — c'est la notre, et les deux doivent rester
+        # d'accord : un runAsUser qui ne correspondrait a aucun utilisateur de l'image
+        # laisserait les fichiers de migration illisibles.
+        runAsUser: 10001
+        runAsGroup: 10001
       containers:
         - name: migrate
           image: {{ include "ocb.image" (dict "root" $ "repository" $svc.image.migrationRepository) }}
