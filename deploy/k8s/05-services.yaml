@@ -1,0 +1,618 @@
+# =====================================================================================
+# FICHIER GENERE — ne pas modifier a la main.
+#
+# Produit par deploy/k8s/rendre.sh depuis le chart Helm et values-cluster.yaml. Toute
+# correction se fait dans le chart ou dans les valeurs, puis on regenere :
+#
+#     ./deploy/k8s/rendre.sh test
+#
+# Les annotations de hook Helm ont ete retirees : sans Helm pour les honorer, elles
+# donneraient a lire une garantie d'ordonnancement qui n'existe pas.
+#
+# N'appliquer qu'APRES la reussite des quatre Job de 04-migrations.yaml.
+# =====================================================================================
+
+---
+# Source: open-core-banking/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ocb-ledger
+  # Redondant pour `helm install`, indispensable pour un manifeste rendu :
+  # `helm template` n'inscrit pas le namespace, et un YAML sans namespace
+  # applique depuis une interface graphique atterrit dans `default`.
+  namespace: test
+  labels:
+    helm.sh/chart: open-core-banking-0.1.0
+    app.kubernetes.io/name: open-core-banking
+    app.kubernetes.io/instance: ocb
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: open-core-banking
+    app.kubernetes.io/component: ledger
+spec:
+  
+  replicas: 1
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Aucune indisponibilite pendant la bascule : le nouveau pod doit etre pret avant
+      # que l'ancien ne parte.
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: open-core-banking
+      app.kubernetes.io/instance: ocb
+      app.kubernetes.io/component: ledger
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: open-core-banking
+        app.kubernetes.io/instance: ocb
+        app.kubernetes.io/component: ledger
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: ledger
+          image: ghcr.io/landryjacques237/ledger-service:latest
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          ports:
+            - name: http
+              containerPort: 8081
+          env:
+            - name: OIDC_ISSUER_URI
+              value: "http://ocb-keycloak:8080/realms/ocb"
+            
+            - name: OIDC_JWK_SET_URI
+              value: "http://ocb-keycloak:8080/realms/ocb/protocol/openid-connect/certs"
+            
+            - name: LEDGER_APP_ROLE
+              value: "ledger_app"
+            - name: LEDGER_DB_POOL_SIZE
+              value: "5"
+            - name: LEDGER_DB_URL
+              value: "jdbc:postgresql://ocb-postgres:5432/ledger"
+            - name: LEDGER_DB_USER
+              value: "ledger_app"
+            - name: LEDGER_LOG_LEVEL
+              value: "INFO"
+            - name: SPRING_FLYWAY_ENABLED
+              value: "false"
+          
+          envFrom:
+            - secretRef:
+                name: ocb-ledger-app
+          
+          startupProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 5
+            failureThreshold: 3
+          
+          resources:
+            limits:
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 512Mi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        # La racine est en lecture seule ; Tomcat et la JVM ont besoin d'un repertoire
+        # temporaire inscriptible, et lui seul.
+        - name: tmp
+          emptyDir: {}
+---
+# Source: open-core-banking/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ocb-notification
+  # Redondant pour `helm install`, indispensable pour un manifeste rendu :
+  # `helm template` n'inscrit pas le namespace, et un YAML sans namespace
+  # applique depuis une interface graphique atterrit dans `default`.
+  namespace: test
+  labels:
+    helm.sh/chart: open-core-banking-0.1.0
+    app.kubernetes.io/name: open-core-banking
+    app.kubernetes.io/instance: ocb
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: open-core-banking
+    app.kubernetes.io/component: notification
+spec:
+  
+  replicas: 1
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Aucune indisponibilite pendant la bascule : le nouveau pod doit etre pret avant
+      # que l'ancien ne parte.
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: open-core-banking
+      app.kubernetes.io/instance: ocb
+      app.kubernetes.io/component: notification
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: open-core-banking
+        app.kubernetes.io/instance: ocb
+        app.kubernetes.io/component: notification
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: notification
+          image: ghcr.io/landryjacques237/notification-service:latest
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          ports:
+            - name: http
+              containerPort: 8084
+          env:
+            - name: OIDC_ISSUER_URI
+              value: "http://ocb-keycloak:8080/realms/ocb"
+            
+            - name: OIDC_JWK_SET_URI
+              value: "http://ocb-keycloak:8080/realms/ocb/protocol/openid-connect/certs"
+            - name: KAFKA_BOOTSTRAP
+              value: "ocb-kafka-0.ocb-kafka:9092"
+            
+            - name: NOTIFICATION_APP_ROLE
+              value: "notification_app"
+            - name: NOTIFICATION_DB_POOL_SIZE
+              value: "5"
+            - name: NOTIFICATION_DB_URL
+              value: "jdbc:postgresql://ocb-postgres:5432/notification"
+            - name: NOTIFICATION_DB_USER
+              value: "notification_app"
+            - name: NOTIFICATION_LOG_LEVEL
+              value: "INFO"
+            - name: SPRING_FLYWAY_ENABLED
+              value: "false"
+          
+          envFrom:
+            - secretRef:
+                name: ocb-notification-app
+          
+          startupProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 5
+            failureThreshold: 3
+          
+          resources:
+            limits:
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 512Mi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        # La racine est en lecture seule ; Tomcat et la JVM ont besoin d'un repertoire
+        # temporaire inscriptible, et lui seul.
+        - name: tmp
+          emptyDir: {}
+---
+# Source: open-core-banking/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ocb-payment
+  # Redondant pour `helm install`, indispensable pour un manifeste rendu :
+  # `helm template` n'inscrit pas le namespace, et un YAML sans namespace
+  # applique depuis une interface graphique atterrit dans `default`.
+  namespace: test
+  labels:
+    helm.sh/chart: open-core-banking-0.1.0
+    app.kubernetes.io/name: open-core-banking
+    app.kubernetes.io/instance: ocb
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: open-core-banking
+    app.kubernetes.io/component: payment
+spec:
+  
+  replicas: 1
+  revisionHistoryLimit: 3
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: open-core-banking
+      app.kubernetes.io/instance: ocb
+      app.kubernetes.io/component: payment
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: open-core-banking
+        app.kubernetes.io/instance: ocb
+        app.kubernetes.io/component: payment
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: payment
+          image: ghcr.io/landryjacques237/payment-service:latest
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          ports:
+            - name: http
+              containerPort: 8082
+          env:
+            - name: OIDC_ISSUER_URI
+              value: "http://ocb-keycloak:8080/realms/ocb"
+            
+            - name: OIDC_JWK_SET_URI
+              value: "http://ocb-keycloak:8080/realms/ocb/protocol/openid-connect/certs"
+            - name: KAFKA_BOOTSTRAP
+              value: "ocb-kafka-0.ocb-kafka:9092"
+            
+            - name: LEDGER_BASE_URL
+              value: "http://ocb-ledger:8081"
+            - name: LEDGER_CLIENT_ID
+              value: "payment-service"
+            - name: OIDC_TOKEN_URI
+              value: "http://ocb-keycloak:8080/realms/ocb/protocol/openid-connect/token"
+            - name: PAYMENT_APP_ROLE
+              value: "payment_app"
+            - name: PAYMENT_DB_POOL_SIZE
+              value: "5"
+            - name: PAYMENT_DB_URL
+              value: "jdbc:postgresql://ocb-postgres:5432/payment"
+            - name: PAYMENT_DB_USER
+              value: "payment_app"
+            - name: PAYMENT_LOG_LEVEL
+              value: "INFO"
+            - name: SPRING_FLYWAY_ENABLED
+              value: "false"
+          
+          envFrom:
+            - secretRef:
+                name: ocb-payment-app
+          
+          startupProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 5
+            failureThreshold: 3
+          
+          resources:
+            limits:
+              memory: 640Mi
+            requests:
+              cpu: 150m
+              memory: 640Mi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        # La racine est en lecture seule ; Tomcat et la JVM ont besoin d'un repertoire
+        # temporaire inscriptible, et lui seul.
+        - name: tmp
+          emptyDir: {}
+---
+# Source: open-core-banking/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ocb-provider
+  # Redondant pour `helm install`, indispensable pour un manifeste rendu :
+  # `helm template` n'inscrit pas le namespace, et un YAML sans namespace
+  # applique depuis une interface graphique atterrit dans `default`.
+  namespace: test
+  labels:
+    helm.sh/chart: open-core-banking-0.1.0
+    app.kubernetes.io/name: open-core-banking
+    app.kubernetes.io/instance: ocb
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: open-core-banking
+    app.kubernetes.io/component: provider
+spec:
+  
+  replicas: 1
+  revisionHistoryLimit: 3
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: open-core-banking
+      app.kubernetes.io/instance: ocb
+      app.kubernetes.io/component: provider
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: open-core-banking
+        app.kubernetes.io/instance: ocb
+        app.kubernetes.io/component: provider
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: provider
+          image: ghcr.io/landryjacques237/provider-service:latest
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          ports:
+            - name: http
+              containerPort: 8083
+          env:
+            - name: OIDC_ISSUER_URI
+              value: "http://ocb-keycloak:8080/realms/ocb"
+            
+            - name: OIDC_JWK_SET_URI
+              value: "http://ocb-keycloak:8080/realms/ocb/protocol/openid-connect/certs"
+            - name: KAFKA_BOOTSTRAP
+              value: "ocb-kafka-0.ocb-kafka:9092"
+            
+            - name: MTN_API_BASE_URL
+              value: "https://sandbox.momodeveloper.mtn.com"
+            - name: ORANGE_API_BASE_URL
+              value: "https://api.orange.com"
+            - name: PROVIDER_APP_ROLE
+              value: "provider_app"
+            - name: PROVIDER_CALLBACK_BASE_URL
+              value: "http://ocb-provider:8083"
+            - name: PROVIDER_DB_POOL_SIZE
+              value: "5"
+            - name: PROVIDER_DB_URL
+              value: "jdbc:postgresql://ocb-postgres:5432/provider"
+            - name: PROVIDER_DB_USER
+              value: "provider_app"
+            - name: PROVIDER_LOG_LEVEL
+              value: "INFO"
+            - name: SPRING_FLYWAY_ENABLED
+              value: "false"
+          
+          envFrom:
+            - secretRef:
+                name: ocb-provider-app
+          
+          startupProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 5
+            failureThreshold: 3
+          
+          resources:
+            limits:
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 512Mi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        # La racine est en lecture seule ; Tomcat et la JVM ont besoin d'un repertoire
+        # temporaire inscriptible, et lui seul.
+        - name: tmp
+          emptyDir: {}
+---
+# Source: open-core-banking/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: ocb-ledger
+  # Redondant pour `helm install`, indispensable pour un manifeste rendu :
+  # `helm template` n'inscrit pas le namespace, et un YAML sans namespace
+  # applique depuis une interface graphique atterrit dans `default`.
+  namespace: test
+  labels:
+    helm.sh/chart: open-core-banking-0.1.0
+    app.kubernetes.io/name: open-core-banking
+    app.kubernetes.io/instance: ocb
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: open-core-banking
+    app.kubernetes.io/component: ledger
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8081
+      targetPort: http
+  selector:
+    app.kubernetes.io/name: open-core-banking
+    app.kubernetes.io/instance: ocb
+    app.kubernetes.io/component: ledger
+---
+# Source: open-core-banking/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: ocb-notification
+  # Redondant pour `helm install`, indispensable pour un manifeste rendu :
+  # `helm template` n'inscrit pas le namespace, et un YAML sans namespace
+  # applique depuis une interface graphique atterrit dans `default`.
+  namespace: test
+  labels:
+    helm.sh/chart: open-core-banking-0.1.0
+    app.kubernetes.io/name: open-core-banking
+    app.kubernetes.io/instance: ocb
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: open-core-banking
+    app.kubernetes.io/component: notification
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8084
+      targetPort: http
+  selector:
+    app.kubernetes.io/name: open-core-banking
+    app.kubernetes.io/instance: ocb
+    app.kubernetes.io/component: notification
+---
+# Source: open-core-banking/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: ocb-payment
+  # Redondant pour `helm install`, indispensable pour un manifeste rendu :
+  # `helm template` n'inscrit pas le namespace, et un YAML sans namespace
+  # applique depuis une interface graphique atterrit dans `default`.
+  namespace: test
+  labels:
+    helm.sh/chart: open-core-banking-0.1.0
+    app.kubernetes.io/name: open-core-banking
+    app.kubernetes.io/instance: ocb
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: open-core-banking
+    app.kubernetes.io/component: payment
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8082
+      targetPort: http
+  selector:
+    app.kubernetes.io/name: open-core-banking
+    app.kubernetes.io/instance: ocb
+    app.kubernetes.io/component: payment
+---
+# Source: open-core-banking/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: ocb-provider
+  # Redondant pour `helm install`, indispensable pour un manifeste rendu :
+  # `helm template` n'inscrit pas le namespace, et un YAML sans namespace
+  # applique depuis une interface graphique atterrit dans `default`.
+  namespace: test
+  labels:
+    helm.sh/chart: open-core-banking-0.1.0
+    app.kubernetes.io/name: open-core-banking
+    app.kubernetes.io/instance: ocb
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: open-core-banking
+    app.kubernetes.io/component: provider
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8083
+      targetPort: http
+  selector:
+    app.kubernetes.io/name: open-core-banking
+    app.kubernetes.io/instance: ocb
+    app.kubernetes.io/component: provider

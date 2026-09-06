@@ -1,0 +1,319 @@
+# =====================================================================================
+# FICHIER GENERE — ne pas modifier a la main.
+#
+# Produit par deploy/k8s/rendre.sh depuis le chart Helm et values-cluster.yaml. Toute
+# correction se fait dans le chart ou dans les valeurs, puis on regenere :
+#
+#     ./deploy/k8s/rendre.sh test
+#
+# Les annotations de hook Helm ont ete retirees : sans Helm pour les honorer, elles
+# donneraient a lire une garantie d'ordonnancement qui n'existe pas.
+#
+# Appliquer CE fichier AVANT 05-services.yaml, et verifier que les quatre Job
+# sont Completed avant de poursuivre.
+# =====================================================================================
+
+---
+# Source: open-core-banking/templates/migration-job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ocb-ledger-migrate
+  # Redondant pour `helm install`, indispensable pour un manifeste rendu :
+  # `helm template` n'inscrit pas le namespace, et un YAML sans namespace
+  # applique depuis une interface graphique atterrit dans `default`.
+  namespace: test
+  labels:
+    helm.sh/chart: open-core-banking-0.1.0
+    app.kubernetes.io/name: open-core-banking
+    app.kubernetes.io/instance: ocb
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: open-core-banking
+    app.kubernetes.io/component: ledger
+  annotations:
+    # Poids negatif : les migrations passent avant tout le reste de la release.
+    
+spec:
+  
+  backoffLimit: 0
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        
+        app.kubernetes.io/name: open-core-banking
+        app.kubernetes.io/instance: ocb
+        app.kubernetes.io/component: ledger-migrate
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        # UID cree dans Dockerfile.migrate. L'image amont flyway/flyway ne definit aucun
+        # utilisateur non privilegie — c'est la notre, et les deux doivent rester
+        # d'accord : un runAsUser qui ne correspondrait a aucun utilisateur de l'image
+        # laisserait les fichiers de migration illisibles.
+        runAsUser: 10001
+        runAsGroup: 10001
+      containers:
+        - name: migrate
+          image: ghcr.io/landryjacques237/ledger-migrate:latest
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          args: ["migrate"]
+          env:
+            - name: FLYWAY_DEFAULT_SCHEMA
+              value: "ledger"
+            - name: FLYWAY_PLACEHOLDERS_LEDGERAPPROLE
+              value: "ledger_app"
+            - name: FLYWAY_SCHEMAS
+              value: "ledger"
+            - name: FLYWAY_URL
+              value: "jdbc:postgresql://ocb-postgres:5432/ledger"
+            - name: FLYWAY_USER
+              value: "ledger_owner"
+          # Le mot de passe du proprietaire vient d'ici, et n'existe nulle part ailleurs
+          # dans la release.
+          envFrom:
+            - secretRef:
+                name: ocb-ledger-migration
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 256Mi
+---
+# Source: open-core-banking/templates/migration-job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ocb-notification-migrate
+  # Redondant pour `helm install`, indispensable pour un manifeste rendu :
+  # `helm template` n'inscrit pas le namespace, et un YAML sans namespace
+  # applique depuis une interface graphique atterrit dans `default`.
+  namespace: test
+  labels:
+    helm.sh/chart: open-core-banking-0.1.0
+    app.kubernetes.io/name: open-core-banking
+    app.kubernetes.io/instance: ocb
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: open-core-banking
+    app.kubernetes.io/component: notification
+  annotations:
+    # Poids negatif : les migrations passent avant tout le reste de la release.
+    
+spec:
+  
+  backoffLimit: 0
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        
+        app.kubernetes.io/name: open-core-banking
+        app.kubernetes.io/instance: ocb
+        app.kubernetes.io/component: notification-migrate
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        # UID cree dans Dockerfile.migrate. L'image amont flyway/flyway ne definit aucun
+        # utilisateur non privilegie — c'est la notre, et les deux doivent rester
+        # d'accord : un runAsUser qui ne correspondrait a aucun utilisateur de l'image
+        # laisserait les fichiers de migration illisibles.
+        runAsUser: 10001
+        runAsGroup: 10001
+      containers:
+        - name: migrate
+          image: ghcr.io/landryjacques237/notification-migrate:latest
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          args: ["migrate"]
+          env:
+            - name: FLYWAY_DEFAULT_SCHEMA
+              value: "notification"
+            - name: FLYWAY_PLACEHOLDERS_NOTIFICATIONAPPROLE
+              value: "notification_app"
+            - name: FLYWAY_SCHEMAS
+              value: "notification"
+            - name: FLYWAY_URL
+              value: "jdbc:postgresql://ocb-postgres:5432/notification"
+            - name: FLYWAY_USER
+              value: "notification_owner"
+          # Le mot de passe du proprietaire vient d'ici, et n'existe nulle part ailleurs
+          # dans la release.
+          envFrom:
+            - secretRef:
+                name: ocb-notification-migration
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 256Mi
+---
+# Source: open-core-banking/templates/migration-job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ocb-payment-migrate
+  # Redondant pour `helm install`, indispensable pour un manifeste rendu :
+  # `helm template` n'inscrit pas le namespace, et un YAML sans namespace
+  # applique depuis une interface graphique atterrit dans `default`.
+  namespace: test
+  labels:
+    helm.sh/chart: open-core-banking-0.1.0
+    app.kubernetes.io/name: open-core-banking
+    app.kubernetes.io/instance: ocb
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: open-core-banking
+    app.kubernetes.io/component: payment
+  annotations:
+    # Poids negatif : les migrations passent avant tout le reste de la release.
+    
+spec:
+  
+  backoffLimit: 0
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        
+        app.kubernetes.io/name: open-core-banking
+        app.kubernetes.io/instance: ocb
+        app.kubernetes.io/component: payment-migrate
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        # UID cree dans Dockerfile.migrate. L'image amont flyway/flyway ne definit aucun
+        # utilisateur non privilegie — c'est la notre, et les deux doivent rester
+        # d'accord : un runAsUser qui ne correspondrait a aucun utilisateur de l'image
+        # laisserait les fichiers de migration illisibles.
+        runAsUser: 10001
+        runAsGroup: 10001
+      containers:
+        - name: migrate
+          image: ghcr.io/landryjacques237/payment-migrate:latest
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          args: ["migrate"]
+          env:
+            - name: FLYWAY_DEFAULT_SCHEMA
+              value: "payment"
+            - name: FLYWAY_PLACEHOLDERS_PAYMENTAPPROLE
+              value: "payment_app"
+            - name: FLYWAY_SCHEMAS
+              value: "payment"
+            - name: FLYWAY_URL
+              value: "jdbc:postgresql://ocb-postgres:5432/payment"
+            - name: FLYWAY_USER
+              value: "payment_owner"
+          # Le mot de passe du proprietaire vient d'ici, et n'existe nulle part ailleurs
+          # dans la release.
+          envFrom:
+            - secretRef:
+                name: ocb-payment-migration
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 256Mi
+---
+# Source: open-core-banking/templates/migration-job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ocb-provider-migrate
+  # Redondant pour `helm install`, indispensable pour un manifeste rendu :
+  # `helm template` n'inscrit pas le namespace, et un YAML sans namespace
+  # applique depuis une interface graphique atterrit dans `default`.
+  namespace: test
+  labels:
+    helm.sh/chart: open-core-banking-0.1.0
+    app.kubernetes.io/name: open-core-banking
+    app.kubernetes.io/instance: ocb
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: open-core-banking
+    app.kubernetes.io/component: provider
+  annotations:
+    # Poids negatif : les migrations passent avant tout le reste de la release.
+    
+spec:
+  
+  backoffLimit: 0
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        
+        app.kubernetes.io/name: open-core-banking
+        app.kubernetes.io/instance: ocb
+        app.kubernetes.io/component: provider-migrate
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        # UID cree dans Dockerfile.migrate. L'image amont flyway/flyway ne definit aucun
+        # utilisateur non privilegie — c'est la notre, et les deux doivent rester
+        # d'accord : un runAsUser qui ne correspondrait a aucun utilisateur de l'image
+        # laisserait les fichiers de migration illisibles.
+        runAsUser: 10001
+        runAsGroup: 10001
+      containers:
+        - name: migrate
+          image: ghcr.io/landryjacques237/provider-migrate:latest
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          args: ["migrate"]
+          env:
+            - name: FLYWAY_DEFAULT_SCHEMA
+              value: "provider"
+            - name: FLYWAY_PLACEHOLDERS_PROVIDERAPPROLE
+              value: "provider_app"
+            - name: FLYWAY_SCHEMAS
+              value: "provider"
+            - name: FLYWAY_URL
+              value: "jdbc:postgresql://ocb-postgres:5432/provider"
+            - name: FLYWAY_USER
+              value: "provider_owner"
+          # Le mot de passe du proprietaire vient d'ici, et n'existe nulle part ailleurs
+          # dans la release.
+          envFrom:
+            - secretRef:
+                name: ocb-provider-migration
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 256Mi

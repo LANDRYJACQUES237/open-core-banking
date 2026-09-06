@@ -1,0 +1,173 @@
+# =====================================================================================
+# Valeurs du chart pour un deploiement dans un namespace partage, sans Helm cote cluster.
+#
+# Ce fichier ne sert pas a `helm install` sur la cible : il sert a RENDRE les manifestes
+# ici, qu'on applique ensuite depuis une interface graphique. Voir deploy/k8s/rendre.sh.
+#
+# Aucun secret. Comme partout ailleurs, ce qui est sensible arrive par des Secret crees
+# hors du chart — ici par deploy/k8s/generer-les-secrets.sh.
+# =====================================================================================
+
+image:
+  # GHCR refuse les majuscules dans un nom d'image, alors que le compte GitHub en contient.
+  registry: ghcr.io/landryjacques237
+  tag: latest
+  pullPolicy: Always
+
+# L'emetteur doit correspondre EXACTEMENT a ce que Keycloak inscrit dans ses jetons, donc
+# a son KC_HOSTNAME. Une difference, meme de schema ou de port, fait echouer la validation
+# avec un message qui parle d'emetteur invalide sans dire lequel etait attendu.
+oidc:
+  issuerUri: http://ocb-keycloak:8080/realms/ocb
+  jwkSetUri: http://ocb-keycloak:8080/realms/ocb/protocol/openid-connect/certs
+
+# Le nom du pod dans le service sans adresse propre, et non le service : c'est l'adresse
+# que le courtier annonce, et un client qui en utiliserait une autre echouerait apres sa
+# premiere requete de metadonnees.
+kafka:
+  bootstrap: ocb-kafka-0.ocb-kafka:9092
+
+# Le compte de service n'est pas cree : le role delegue sur ce cluster ne le permet pas, et
+# aucun service n'appelle l'API Kubernetes de toute facon. Les pods utilisent le compte
+# `default` du namespace, dont le jeton n'est pas monte.
+serviceAccount:
+  create: false
+
+migrationDeadlineSeconds: 600
+
+services:
+
+  ledger:
+    enabled: true
+    port: 8081
+    # Une replique et non deux : le namespace est partage avec d'autres applications, et
+    # une seconde replique ne demontrerait rien de plus ici.
+    replicaCount: 1
+    outboxRelay: false
+    image:
+      repository: ledger-service
+      migrationRepository: ledger-migrate
+    secretName: ocb-ledger-app
+    env:
+      LEDGER_DB_URL: jdbc:postgresql://ocb-postgres:5432/ledger
+      LEDGER_DB_USER: ledger_app
+      LEDGER_APP_ROLE: ledger_app
+      LEDGER_DB_POOL_SIZE: "5"
+      LEDGER_LOG_LEVEL: INFO
+      SPRING_FLYWAY_ENABLED: "false"
+    migration:
+      enabled: true
+      secretName: ocb-ledger-migration
+      env:
+        FLYWAY_URL: jdbc:postgresql://ocb-postgres:5432/ledger
+        FLYWAY_USER: ledger_owner
+        FLYWAY_SCHEMAS: ledger
+        FLYWAY_DEFAULT_SCHEMA: ledger
+        FLYWAY_PLACEHOLDERS_LEDGERAPPROLE: ledger_app
+    resources:
+      requests: {cpu: 100m, memory: 512Mi}
+      limits: {memory: 512Mi}
+    ingress:
+      enabled: false
+
+  payment:
+    enabled: true
+    port: 8082
+    replicaCount: 1
+    outboxRelay: true
+    kafka: true
+    image:
+      repository: payment-service
+      migrationRepository: payment-migrate
+    secretName: ocb-payment-app
+    env:
+      PAYMENT_DB_URL: jdbc:postgresql://ocb-postgres:5432/payment
+      PAYMENT_DB_USER: payment_app
+      PAYMENT_APP_ROLE: payment_app
+      PAYMENT_DB_POOL_SIZE: "5"
+      PAYMENT_LOG_LEVEL: INFO
+      SPRING_FLYWAY_ENABLED: "false"
+      LEDGER_BASE_URL: "http://{{ .Release.Name }}-ledger:8081"
+      OIDC_TOKEN_URI: http://ocb-keycloak:8080/realms/ocb/protocol/openid-connect/token
+      LEDGER_CLIENT_ID: payment-service
+    migration:
+      enabled: true
+      secretName: ocb-payment-migration
+      env:
+        FLYWAY_URL: jdbc:postgresql://ocb-postgres:5432/payment
+        FLYWAY_USER: payment_owner
+        FLYWAY_SCHEMAS: payment
+        FLYWAY_DEFAULT_SCHEMA: payment
+        FLYWAY_PLACEHOLDERS_PAYMENTAPPROLE: payment_app
+    resources:
+      requests: {cpu: 150m, memory: 640Mi}
+      limits: {memory: 640Mi}
+    ingress:
+      enabled: false
+
+  provider:
+    enabled: true
+    port: 8083
+    replicaCount: 1
+    outboxRelay: true
+    kafka: true
+    image:
+      repository: provider-service
+      migrationRepository: provider-migrate
+    secretName: ocb-provider-app
+    env:
+      PROVIDER_DB_URL: jdbc:postgresql://ocb-postgres:5432/provider
+      PROVIDER_DB_USER: provider_app
+      PROVIDER_APP_ROLE: provider_app
+      PROVIDER_DB_POOL_SIZE: "5"
+      PROVIDER_LOG_LEVEL: INFO
+      SPRING_FLYWAY_ENABLED: "false"
+      # Adresse a laquelle un operateur nous rappellerait. Interne ici : aucun operateur
+      # reel ne joint cette plateforme, et le simulateur vit dans le cluster.
+      PROVIDER_CALLBACK_BASE_URL: "http://{{ .Release.Name }}-provider:8083"
+    migration:
+      enabled: true
+      secretName: ocb-provider-migration
+      env:
+        FLYWAY_URL: jdbc:postgresql://ocb-postgres:5432/provider
+        FLYWAY_USER: provider_owner
+        FLYWAY_SCHEMAS: provider
+        FLYWAY_DEFAULT_SCHEMA: provider
+        FLYWAY_PLACEHOLDERS_PROVIDERAPPROLE: provider_app
+    resources:
+      requests: {cpu: 100m, memory: 512Mi}
+      limits: {memory: 512Mi}
+    ingress:
+      enabled: false
+
+  notification:
+    enabled: true
+    port: 8084
+    replicaCount: 1
+    outboxRelay: false
+    kafka: true
+    image:
+      repository: notification-service
+      migrationRepository: notification-migrate
+    secretName: ocb-notification-app
+    env:
+      NOTIFICATION_DB_URL: jdbc:postgresql://ocb-postgres:5432/notification
+      NOTIFICATION_DB_USER: notification_app
+      NOTIFICATION_APP_ROLE: notification_app
+      NOTIFICATION_DB_POOL_SIZE: "5"
+      NOTIFICATION_LOG_LEVEL: INFO
+      SPRING_FLYWAY_ENABLED: "false"
+    migration:
+      enabled: true
+      secretName: ocb-notification-migration
+      env:
+        FLYWAY_URL: jdbc:postgresql://ocb-postgres:5432/notification
+        FLYWAY_USER: notification_owner
+        FLYWAY_SCHEMAS: notification
+        FLYWAY_DEFAULT_SCHEMA: notification
+        FLYWAY_PLACEHOLDERS_NOTIFICATIONAPPROLE: notification_app
+    resources:
+      requests: {cpu: 100m, memory: 512Mi}
+      limits: {memory: 512Mi}
+    ingress:
+      enabled: false

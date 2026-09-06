@@ -40,6 +40,10 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: {{ include "ocb.name" $ctx }}-migrate
+  # Redondant pour `helm install`, indispensable pour un manifeste rendu :
+  # `helm template` n'inscrit pas le namespace, et un YAML sans namespace
+  # applique depuis une interface graphique atterrit dans `default`.
+  namespace: {{ $.Release.Namespace }}
   labels:
     {{- include "ocb.labels" $ctx | nindent 4 }}
   annotations:
