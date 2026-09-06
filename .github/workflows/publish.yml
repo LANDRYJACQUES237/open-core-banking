@@ -61,7 +61,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Preparer buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       # Le jeton est fourni par GitHub pour la duree du travail. Aucun secret de registre
       # n'est stocke dans le depot ni dans les parametres.
