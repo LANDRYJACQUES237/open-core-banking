@@ -41,6 +41,19 @@ spec:
       # un outil de diagnostic qui change entre deux sessions produit des surprises.
       image: nicolaka/netshoot:v0.13
       command: ["sleep", "infinity"]
+      # Les secrets clients et le mot de passe d'administration arrivent ici, au lieu
+      # d'etre recopies a la main dans un terminal.
+      #
+      # Un identifiant transcrit par un humain finit par etre transcrit de travers, et
+      # l'echec ressemble alors a un defaut de la plateforme : Keycloak repond 401
+      # « Invalid client credentials » aussi bien pour un secret errone que pour un client
+      # inexistant. On cherche un probleme de realm la ou il n'y a qu'un mauvais collage.
+      #
+      # Ce pod peut deja joindre toutes les bases du namespace : lui confier ces valeurs
+      # n'elargit pas ce qu'il permet, et il est supprime des la verification faite.
+      envFrom:
+        - secretRef:
+            name: ocb-keycloak
       securityContext:
         allowPrivilegeEscalation: false
         capabilities:

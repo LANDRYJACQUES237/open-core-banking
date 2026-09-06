@@ -80,7 +80,9 @@ else
 fi
 
 titre "L'audience est portee par la portee, pas par le client"
-TO=$(jeton ops-console "${OPS_SECRET:?definir OPS_SECRET avant de lancer}") || exit 1
+# OCB_CLIENT_SECRET_OPS vient du Secret ocb-keycloak, monte dans le pod. OPS_SECRET
+# reste accepte pour une execution ailleurs, mais n'a plus a etre renseigne ici.
+TO=$(jeton ops-console "${OPS_SECRET:-${OCB_CLIENT_SECRET_OPS:?aucun secret ops-console : le pod monte-t-il bien le Secret ocb-keycloak ?}}") || exit 1
 verifier "ledger-service" "$(revendication "$TO" '.aud | if type=="array" then .[0] else . end')" \
     "l'exploitation recoit l'audience du grand livre"
 if revendication "$TO" '.scope' | grep -q 'ledger:read'; then
