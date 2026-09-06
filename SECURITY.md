@@ -170,9 +170,19 @@ cluster reel, un refus par defaut serait le minimum.
 **Keycloak tourne en mode `start-dev` avec une base H2** dans la pile Compose. Ce mode
 n'est pas destine a autre chose qu'un poste de developpement.
 
-**Le chart n'a jamais tourne sur un vrai cluster.** Il est verifie a chaque poussee par
-rendu et par `kubeconform`, ce qui valide les manifestes produits, pas leur comportement
-sous un ordonnanceur.
+**Helm n'a jamais installe ce chart.** Les manifestes qu'il produit tournent sur un
+cluster reel, mais appliques un par un : la garantie du hook `pre-install` — migration
+echouee, release echouee, aucun pod deploye — n'a donc pas ete exercee, seulement son
+equivalent manuel, qui repose sur l'operateur.
+
+**Ce deploiement n'expose rien** : ni `Ingress`, ni TLS, ni `NetworkPolicy`. Il demontre
+que la plateforme fonctionne sous Kubernetes, pas qu'elle est prete a etre exposee.
+
+**L'authentification locale de PostgreSQL est en `trust`.** C'est le defaut de l'image :
+les connexions par le reseau exigent bien un mot de passe, mais quiconque obtient un
+`exec` dans le pod de la base s'y connecte en superutilisateur sans identifiant. Dans un
+namespace partage, cela signifie que toute personne disposant de `pods/exec` sur ce
+namespace a un acces total aux donnees.
 
 **Le chart ne redeploie pas les pods quand un `Secret` change.** Une somme de controle ne
 peut pas porter sur un objet que le chart ne possede pas. Apres une rotation, il faut un

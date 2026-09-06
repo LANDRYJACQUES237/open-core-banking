@@ -345,8 +345,8 @@ comptabilite pourrait diverger d'elle ; celui-ci ne le peut pas, puisqu'il *est*
   distribuees. Le document de Phase 0 les annoncait ; ils n'ont pas ete faits.
 - **Le relais d'outbox interroge la table.** Debezium etait prevu ; la table en respecte
   la convention, mais le remplacement n'a pas eu lieu.
-- **Le chart Helm n'a jamais tourne sur un vrai cluster.** Il est verifie par rendu et par
-  `kubeconform` a chaque push, ce qui valide les manifestes produits, pas leur
-  comportement sous un ordonnanceur.
+- **Helm n'a jamais installe ce chart.** Ses manifestes rendus tournent sur un cluster
+  reel, mais appliques un par un : la garantie du hook `pre-install` n'a pas ete
+  exercee. Et ce deploiement n'expose rien — ni `Ingress`, ni TLS, ni `NetworkPolicy`.
 - **PostgreSQL, Kafka et Keycloak ne sont pas deployes par le chart.** Ce sont des systemes
   avec etat, dont l'exploitation ne ressemble pas a celle d'un service sans etat.

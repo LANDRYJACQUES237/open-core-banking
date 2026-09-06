@@ -4,7 +4,7 @@
 # Produit par deploy/k8s/rendre.sh depuis le chart Helm et values-cluster.yaml. Toute
 # correction se fait dans le chart ou dans les valeurs, puis on regenere :
 #
-#     ./deploy/k8s/rendre.sh ocb
+#     ./deploy/k8s/rendre.sh test
 #
 # Les annotations de hook Helm ont ete retirees : sans Helm pour les honorer, elles
 # donneraient a lire une garantie d'ordonnancement qui n'existe pas.
@@ -30,7 +30,7 @@ metadata:
   # Redondant pour `helm install`, indispensable pour un manifeste rendu :
   # `helm template` n'inscrit pas le namespace, et un YAML sans namespace
   # applique depuis une interface graphique atterrit dans `default`.
-  namespace: ocb
+  namespace: test
   labels:
     helm.sh/chart: open-core-banking-0.1.0
     app.kubernetes.io/name: open-core-banking
@@ -120,7 +120,7 @@ metadata:
   # Redondant pour `helm install`, indispensable pour un manifeste rendu :
   # `helm template` n'inscrit pas le namespace, et un YAML sans namespace
   # applique depuis une interface graphique atterrit dans `default`.
-  namespace: ocb
+  namespace: test
   labels:
     helm.sh/chart: open-core-banking-0.1.0
     app.kubernetes.io/name: open-core-banking
@@ -210,7 +210,7 @@ metadata:
   # Redondant pour `helm install`, indispensable pour un manifeste rendu :
   # `helm template` n'inscrit pas le namespace, et un YAML sans namespace
   # applique depuis une interface graphique atterrit dans `default`.
-  namespace: ocb
+  namespace: test
   labels:
     helm.sh/chart: open-core-banking-0.1.0
     app.kubernetes.io/name: open-core-banking
@@ -300,7 +300,7 @@ metadata:
   # Redondant pour `helm install`, indispensable pour un manifeste rendu :
   # `helm template` n'inscrit pas le namespace, et un YAML sans namespace
   # applique depuis une interface graphique atterrit dans `default`.
-  namespace: ocb
+  namespace: test
   labels:
     helm.sh/chart: open-core-banking-0.1.0
     app.kubernetes.io/name: open-core-banking

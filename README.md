@@ -84,6 +84,15 @@ bout en bout** rejoue ces proprietes sur la plateforme reellement demarree — d
 executees a chaque push contre une pile fraichement construite. Voir
 [docs/DEMARRAGE.md](docs/DEMARRAGE.md).
 
+Les memes proprietes ont ete verifiees **sur un cluster Kubernetes**, ou l'immuabilite du
+grand livre se lit dans trois refus de natures differentes :
+
+```
+ERROR:  permission denied for table posting_line              <- les droits
+ERROR:  LEDGER_IMMUTABLE: DELETE refuse sur posting_line      <- le declencheur
+FATAL:  permission denied for database "payment"              <- le cloisonnement
+```
+
 ---
 
 ## Architecture
@@ -190,9 +199,15 @@ Pour lancer un service seul, voir son README :
   traces distribuees.
 - **Le relais d'outbox interroge la table.** Debezium etait prevu ; la table en respecte la
   convention, mais le remplacement n'a pas eu lieu.
-- **Le chart Helm n'a jamais tourne sur un vrai cluster.** Il est verifie a chaque push par
-  rendu et par `kubeconform`, ce qui valide les manifestes produits, pas leur comportement
-  sous un ordonnanceur.
+- **Helm lui-meme n'a jamais installe ce chart.** Les manifestes qu'il produit, eux,
+  tournent sur un cluster Kubernetes reel : quatre services, quatre migrations, une
+  instance PostgreSQL, Kafka et Keycloak en mode production. Mais ils y ont ete appliques
+  un par un, faute des droits necessaires a `helm install` — donc **la garantie du hook
+  `pre-install` n'a pas ete exercee**, seulement son equivalent manuel. Voir
+  [deploy/k8s/](deploy/k8s/).
+- **Ce deploiement n'expose rien.** Ni `Ingress`, ni TLS, ni `NetworkPolicy` : tous les
+  `Service` sont internes au cluster. Ce qui a ete demontre est que la plateforme
+  fonctionne sous Kubernetes, pas qu'elle est prete a etre exposee.
 - **Les operateurs sont simules.** Aucun accord commercial avec MTN ou Orange ; le
   simulateur reproduit leurs reponses documentees, y compris leurs silences.
 

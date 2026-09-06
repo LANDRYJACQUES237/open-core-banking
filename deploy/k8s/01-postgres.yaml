@@ -46,7 +46,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: ocb-postgres-init
-  namespace: ocb
+  namespace: test
   labels:
     app.kubernetes.io/name: ocb-postgres
     app.kubernetes.io/part-of: open-core-banking
@@ -102,7 +102,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: ocb-postgres
-  namespace: ocb
+  namespace: test
   labels:
     app.kubernetes.io/name: ocb-postgres
     app.kubernetes.io/part-of: open-core-banking
@@ -122,7 +122,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: ocb-postgres
-  namespace: ocb
+  namespace: test
   labels:
     app.kubernetes.io/name: ocb-postgres
     app.kubernetes.io/part-of: open-core-banking
