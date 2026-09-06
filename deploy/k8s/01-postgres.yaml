@@ -1,0 +1,203 @@
+# =====================================================================================
+# PostgreSQL, pour un deploiement de demonstration.
+#
+# ------------------------------------------------------------------------------------
+# **Un ecart assume par rapport a l'architecture, et il faut le dire.**
+#
+# Le projet pose « une base par service, jamais partagee », et la pile Docker Compose
+# demarre quatre instances PostgreSQL distinctes. Ici, une seule instance heberge quatre
+# bases de donnees.
+#
+# Ce qui est conserve — et c'est ce qui portait la securite :
+#   - quatre bases distinctes, aucune requete ne peut en traverser deux ;
+#   - deux roles par service, avec des mots de passe distincts ;
+#   - la separation entre celui qui migre et celui qui sert, donc l'immuabilite du grand
+#     livre.
+#
+# Ce qui est perdu — et c'est une propriete d'exploitation, pas de securite :
+#   - l'isolation des pannes. Cette instance tombe, les quatre services tombent.
+#   - l'independance des montees de version et des sauvegardes.
+#
+# La raison est le contexte : un namespace partage avec d'autres applications, ou quatre
+# instances consommeraient quatre volumes et quatre fois la memoire sans rien demontrer de
+# plus. Un deploiement reel reviendrait a quatre instances, ou a un operateur qui les gere.
+# ------------------------------------------------------------------------------------
+#
+# Le role proprietaire n'est PAS superutilisateur, contrairement a la pile Compose ou il
+# l'est par construction. C'est un durcissement, pas une regression : un superutilisateur
+# peut positionner session_replication_role et contourner les declencheurs d'immuabilite.
+# =====================================================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ocb-postgres-init
+  labels:
+    app.kubernetes.io/name: ocb-postgres
+    app.kubernetes.io/part-of: open-core-banking
+data:
+  # L'image PostgreSQL execute ce qui se trouve dans /docker-entrypoint-initdb.d au tout
+  # premier demarrage, et seulement a celui-la. Un script shell plutot que du SQL, parce
+  # que les mots de passe arrivent par l'environnement : les ecrire en SQL les figerait
+  # dans un ConfigMap, qui n'est pas un Secret.
+  10-roles-et-bases.sh: |
+    #!/bin/bash
+    set -euo pipefail
+
+    creer() {
+      local service="$1" owner_pwd="$2" app_pwd="$3"
+
+      psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres <<-SQL
+        -- Proprietaire du schema : applique les migrations, possede les tables.
+        -- Volontairement NOSUPERUSER : un superutilisateur pourrait positionner
+        -- session_replication_role et faire taire les declencheurs d'immuabilite.
+        CREATE ROLE ${service}_owner LOGIN NOSUPERUSER NOCREATEROLE PASSWORD '$owner_pwd';
+
+        -- Role d'execution. Il est cree ici sans aucun droit : c'est la migration V5 qui
+        -- lui accorde SELECT et INSERT, et rien d'autre. Elle ne le cree pas, elle
+        -- suppose qu'il existe.
+        CREATE ROLE ${service}_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD '$app_pwd';
+
+        CREATE DATABASE ${service} OWNER ${service}_owner;
+
+        -- Personne d'autre n'a affaire a cette base.
+        REVOKE ALL ON DATABASE ${service} FROM PUBLIC;
+        GRANT CONNECT ON DATABASE ${service} TO ${service}_app;
+    SQL
+    }
+
+    creer ledger       "$LEDGER_OWNER_PASSWORD"       "$LEDGER_APP_PASSWORD"
+    creer payment      "$PAYMENT_OWNER_PASSWORD"      "$PAYMENT_APP_PASSWORD"
+    creer provider     "$PROVIDER_OWNER_PASSWORD"     "$PROVIDER_APP_PASSWORD"
+    creer notification "$NOTIFICATION_OWNER_PASSWORD" "$NOTIFICATION_APP_PASSWORD"
+
+    # Keycloak stocke son etat ici plutot que dans une base embarquee. Le mode production
+    # de Keycloak exige une base externe, et une base embarquee perdrait le realm a chaque
+    # redemarrage du pod.
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres <<-SQL
+      CREATE ROLE keycloak LOGIN NOSUPERUSER NOCREATEROLE PASSWORD '$KEYCLOAK_DB_PASSWORD';
+      CREATE DATABASE keycloak OWNER keycloak;
+      REVOKE ALL ON DATABASE keycloak FROM PUBLIC;
+    SQL
+
+    echo "Bases et roles crees : ledger, payment, provider, notification, keycloak."
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ocb-postgres
+  labels:
+    app.kubernetes.io/name: ocb-postgres
+    app.kubernetes.io/part-of: open-core-banking
+spec:
+  # ClusterIP, jamais NodePort ni LoadBalancer. Une base de donnees joignable de
+  # l'exterieur est une porte qu'aucun test n'emprunte, donc que personne ne remarque.
+  type: ClusterIP
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+  selector:
+    app.kubernetes.io/name: ocb-postgres
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ocb-postgres
+  labels:
+    app.kubernetes.io/name: ocb-postgres
+    app.kubernetes.io/part-of: open-core-banking
+spec:
+  serviceName: ocb-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ocb-postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ocb-postgres
+        app.kubernetes.io/part-of: open-core-banking
+    spec:
+      # Aucun service n'appelle l'API Kubernetes ; monter le jeton offrirait des
+      # identifiants de cluster a qui prendrait la main sur le conteneur.
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        # UID de l'utilisateur postgres dans l'image alpine.
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+            # La racine reste inscriptible : l'entrypoint de l'image ecrit dans
+            # /var/run/postgresql et /tmp. La durcir demanderait de monter chacun de ces
+            # chemins, pour un gain faible sur un conteneur qui ne fait tourner que
+            # PostgreSQL.
+            readOnlyRootFilesystem: false
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            # Le superutilisateur ne sert qu'a l'initialisation. Aucun service ne s'en sert
+            # ensuite : chacun a son role applicatif.
+            - name: POSTGRES_USER
+              value: postgres
+            - name: POSTGRES_DB
+              value: postgres
+            # Les donnees vivent dans un sous-repertoire du volume : un volume monte n'est
+            # pas vide (lost+found), et initdb refuse un repertoire non vide.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          envFrom:
+            - secretRef:
+                name: ocb-postgres-init
+          volumeMounts:
+            - name: donnees
+              mountPath: /var/lib/postgresql/data
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+          # pg_isready plutot qu'une connexion applicative : la sonde ne doit dependre
+          # d'aucun role cree par le script d'initialisation, qui n'a pas encore tourne au
+          # premier demarrage.
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+      volumes:
+        - name: init
+          configMap:
+            name: ocb-postgres-init
+            defaultMode: 0555
+  volumeClaimTemplates:
+    - metadata:
+        name: donnees
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: longhorn-general
+        resources:
+          requests:
+            storage: 8Gi
