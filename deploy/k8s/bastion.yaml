@@ -20,7 +20,18 @@
 # a laisser une session administrateur ouverte.
 # ------------------------------------------------------------------------------------
 #
-# Les droits sont volontairement bornes au namespace `ocb` : un `RoleBinding`, pas un
+# ------------------------------------------------------------------------------------
+# **Le namespace doit deja exister.** Ce fichier n'en cree pas : creer un namespace est un
+# droit au niveau du cluster, que beaucoup de comptes n'ont pas — l'echec ressemble alors a
+#
+#     namespaces "ocb" is forbidden: User "..." cannot update resource "namespaces"
+#
+# Remplacer les trois occurrences de `namespace: ocb` par un namespace ou l'on a le droit
+# de creer des pods. En cas de doute, l'interface les liste : ceux qui apparaissent sont
+# ceux qu'on peut au moins lire.
+# ------------------------------------------------------------------------------------
+#
+# Les droits sont volontairement bornes a ce namespace : un `RoleBinding`, pas un
 # `ClusterRoleBinding`. Sur un cluster partage, un compte de service capable d'agir partout
 # n'est pas justifie par le fait de deployer une application quelque part.
 #
@@ -29,14 +40,6 @@
 # utilisateurs et merite d'etre prise sciemment plutot que d'etre incluse ici par commodite.
 # =====================================================================================
 
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: ocb
-  labels:
-    app.kubernetes.io/part-of: open-core-banking
-
----
 apiVersion: v1
 kind: ServiceAccount
 metadata:
