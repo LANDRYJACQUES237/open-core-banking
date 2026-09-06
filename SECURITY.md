@@ -55,6 +55,62 @@ est une intention.
 *Verifie par* `LedgerSecurityIT`, `PaymentSecurityIT`, `ProviderSecurityIT`,
 `NotificationSecurityIT`, et les etapes 2 et 3 de `deploy/parcours.sh`.
 
+### Injection SQL
+
+Quatre couches, dont la troisieme est celle qui distingue ce projet.
+
+**1. Requetes parametrees, sans exception.** Aucun ORM — ni Hibernate, ni JPA — mais le
+`JdbcClient` de Spring, en SQL explicite. **54 requetes, 176 liaisons de parametres
+nommes.** Les seules concatenations de chaines dans du SQL sont `constante + constante` :
+un `SELECT` statique suivi d'une clause `WHERE` litterale a parametres. Aucune valeur issue
+d'une requete HTTP n'entre dans une chaine SQL, y compris dans le verrou de portefeuille :
+`pg_advisory_xact_lock(hashtextextended(:wallet, :seed))`.
+
+La seule interpolation reelle est le **nom de schema**, lu depuis
+`@ConfigurationProperties` — donc depuis la configuration de deploiement, jamais depuis une
+requete. Elle existe parce qu'un identifiant SQL ne *peut pas* etre parametre, et c'est le
+seul cas du depot.
+
+**2. Un contrat d'entree strict, avant le code.** L'API est contract-first : les motifs
+sont verifies avant que quoi que ce soit n'atteigne la couche metier — `^[0-9]{4}(\.[A-Za-z0-9_-]{1,64})?$`
+pour un numero de compte, `^\+[0-9]{9,15}$` pour un numero de telephone, un motif decimal
+pour les montants. Une chaine hostile est rejetee en `400` au bord.
+
+**3. Le privilege n'existe pas.** C'est l'argument principal, et il ne depend pas de la
+qualite du code applicatif. Le role qui fait tourner l'application detient exactement :
+
+```sql
+GRANT SELECT, INSERT ON ledger.journal_entry
+GRANT SELECT, INSERT ON ledger.posting_line
+GRANT SELECT, INSERT ON ledger.audit_log
+GRANT SELECT, INSERT ON ledger.audit_seal
+```
+
+Ni `UPDATE`, ni `DELETE`. **Une injection SQL reussie ne peut donc ni modifier ni effacer
+une ecriture comptable : le droit n'existe pas.** Et le mot de passe du proprietaire du
+schema n'est jamais dans le conteneur applicatif — image, pod et `Secret` distincts — si
+bien qu'une injection ne peut pas non plus s'elever.
+
+**4. L'immuabilite par declencheurs**, decrite dans la section suivante : elle refuse
+`UPDATE` et `DELETE` meme au proprietaire du schema.
+
+**Ce que cela ne couvre pas.** Le parametrage protege les **valeurs**, pas les
+**identifiants** — d'ou le cas du nom de schema, qui n'est pas controlable par un
+attaquant sans acces a la configuration de deploiement. CodeQL tourne en
+`security-extended` a chaque poussee et couvre les requetes d'injection Java. En revanche,
+**aucun test d'intrusion, aucun DAST, aucune campagne `sqlmap`** : la protection est
+structurelle et verifiee statiquement, pas eprouvee offensivement.
+
+*Verifie par* CodeQL pour l'analyse statique d'injection, `ImmutabilityIT` pour la couche
+de droits, et l'etape 8 de `deploy/parcours.sh` sur la plateforme assemblee.
+
+**Rien n'interdit mecaniquement d'ecrire un jour une requete concatenee.** La discipline du
+parametrage repose sur la relecture et sur CodeQL, pas sur une regle du depot — a la
+difference des frontieres entre services, que dix-sept regles ArchUnit font echouer a la
+compilation. C'est une asymetrie connue, et le paragraphe 3 ci-dessus est ce qui la rend
+tolerable : meme une requete concatenee introduite par inadvertance ne pourrait pas alterer
+le grand livre.
+
 ### Integrite du grand livre
 
 - **Deux couches independantes.** Des declencheurs PostgreSQL refusent `UPDATE` et
