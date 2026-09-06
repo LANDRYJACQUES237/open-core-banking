@@ -83,8 +83,26 @@ titre "L'audience est portee par la portee, pas par le client"
 # OCB_CLIENT_SECRET_OPS vient du Secret ocb-keycloak, monte dans le pod. OPS_SECRET
 # reste accepte pour une execution ailleurs, mais n'a plus a etre renseigne ici.
 TO=$(jeton ops-console "${OPS_SECRET:-${OCB_CLIENT_SECRET_OPS:?aucun secret ops-console : le pod monte-t-il bien le Secret ocb-keycloak ?}}") || exit 1
-verifier "ledger-service" "$(revendication "$TO" '.aud | if type=="array" then .[0] else . end')" \
-    "l'exploitation recoit l'audience du grand livre"
+# L'audience est une LISTE : ops-console porte trois portees de lecture, donc trois
+# audiences. Une premiere version de ce test prenait le premier element et exigeait
+# ledger-service ; Keycloak renvoie la liste dans un ordre arbitraire, et le test
+# echouait sur une plateforme correcte.
+#
+# Ce qui compte n'est pas l'ordre mais la COMPOSITION : les audiences des services que
+# ses portees ouvrent, et aucune autre. La verification negative est la plus parlante —
+# un compte de lecture ne doit pas porter l'audience du moteur de paiement, sans quoi
+# son jeton serait accepte par un service qu'il n'a aucune raison d'atteindre.
+auds=$(revendication "$TO" '.aud | if type=="array" then .[] else . end' | sort | tr '\n' ' ')
+for attendu in ledger-service provider-service notification-service; do
+    case " $auds " in
+        *" $attendu "*) ok "l'audience contient $attendu" ;;
+        *) echec "$attendu absent des audiences : $auds" ;;
+    esac
+done
+case " $auds " in
+    *" payment-service "*) echec "elle porte l'audience du moteur de paiement, qu'aucune de ses portees n'ouvre" ;;
+    *) ok "elle ne porte pas l'audience du moteur de paiement" ;;
+esac
 if revendication "$TO" '.scope' | grep -q 'ledger:read'; then
     ok "elle porte ledger:read"
 else
