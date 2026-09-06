@@ -192,7 +192,7 @@ Pour lancer un service seul, voir son README :
 | 5 | Images, Compose, chart Helm, sondes, metriques metier | Termine |
 | 6 | Documentation, diagrammes C4, decisions, parcours verifie | Termine |
 
-### Ce qui n'est pas fait, et qu'il serait malhonnete de laisser croire
+
 
 - **Aucune pile d'observabilite n'est deployee.** Les services exposent
   `/actuator/prometheus` avec des metriques metier ; il n'y a ni tableau de bord, ni
