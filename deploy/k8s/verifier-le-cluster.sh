@@ -68,11 +68,15 @@ for couple in "grand livre|$LEDGER" "paiement|$PAYMENT" "operateurs|$PROVIDER" "
 done
 
 titre "La sonde publique ne revele rien"
+# Ce qui compte est l'absence de DETAIL sur les composants, pas une egalite stricte avec
+# {"status":"UP"}. Spring Boot ajoute la liste des GROUPES de sondes disponibles — des
+# noms, « liveness » et « readiness », qui ne disent rien du systeme. Une premiere version
+# de cette verification exigeait l'egalite et echouait sur une plateforme correcte.
 detail=$(curl -sS -m 10 "$LEDGER/actuator/health" 2>/dev/null)
-if [ "$detail" = '{"status":"UP"}' ]; then
-    ok "elle ne renvoie que l'etat, sans detail des composants"
+if printf '%s' "$detail" | jq -e 'has("components") or has("details")' > /dev/null 2>&1; then
+    echec "elle expose l'etat des composants : $detail"
 else
-    echec "elle expose plus que l'etat : $detail"
+    ok "aucun detail de composant ($detail)"
 fi
 
 titre "L'audience est portee par la portee, pas par le client"
