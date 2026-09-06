@@ -1,0 +1,55 @@
+# =====================================================================================
+# Pod de verification, temporaire.
+#
+# Les images applicatives ne contiennent ni curl ni shell utilitaire, et leur racine est en
+# lecture seule : c'est voulu, et cela empeche de verifier depuis elles. Ce pod fournit de
+# quoi interroger la plateforme depuis l'interieur du cluster, ou les Service sont
+# joignables — aucun d'eux n'etant expose a l'exterieur.
+#
+# ------------------------------------------------------------------------------------
+# **A supprimer une fois la verification faite.**
+#
+# Il ne detient aucun droit Kubernetes, mais il sait joindre toutes les bases et tous les
+# services du namespace. C'est un outil de diagnostic, pas un resident.
+# ------------------------------------------------------------------------------------
+#
+# Le script a executer dedans est dans deploy/k8s/verifier-le-cluster.sh. Il reprend les
+# etapes de deploy/parcours.sh qui ne demandent pas Docker Compose.
+# =====================================================================================
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ocb-verification
+  namespace: ocb
+  labels:
+    app.kubernetes.io/name: ocb-verification
+    app.kubernetes.io/part-of: open-core-banking
+spec:
+  automountServiceAccountToken: false
+  # Le pod s'eteint tout seul apres une heure : un outil de diagnostic oublie est le genre
+  # de chose qui reste.
+  activeDeadlineSeconds: 3600
+  restartPolicy: Never
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+  containers:
+    - name: shell
+      # netshoot embarque curl, jq et de quoi diagnostiquer le reseau. Version epinglee :
+      # un outil de diagnostic qui change entre deux sessions produit des surprises.
+      image: nicolaka/netshoot:v0.13
+      command: ["sleep", "infinity"]
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
+        seccompProfile:
+          type: RuntimeDefault
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+        limits:
+          memory: 256Mi
