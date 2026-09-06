@@ -11,7 +11,7 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 3
     groups:
       mineures-et-correctives:
         update-types: [minor, patch]
@@ -36,3 +36,22 @@ updates:
       interval: weekly
     commit-message:
       prefix: "deps(images)"
+    # Les montees de version MAJEURE sont ignorees, parce qu'elles contredisent des
+    # decisions ecrites ailleurs dans le depot :
+    #
+    #   - le JDK 21 est la cible declaree du projet, et l'integration continue compile ET
+    #     execute dessus. Passer l'image d'execution en 25 ferait diverger l'image de ce
+    #     que les tests ont valide.
+    #   - la version majeure de Flyway est alignee sur celle qu'embarque Spring Boot, et
+    #     Dockerfile.migrate dit que cet alignement se verifie a la main.
+    #
+    # Les correctifs de securite d'une meme majeure continuent d'arriver, et ce sont eux
+    # qui comptent. Une montee de majeure reste possible : elle se decide, elle ne se subit
+    # pas.
+    ignore:
+      - dependency-name: eclipse-temurin
+        update-types: ["version-update:semver-major"]
+      - dependency-name: maven
+        update-types: ["version-update:semver-major"]
+      - dependency-name: flyway/flyway
+        update-types: ["version-update:semver-major"]

@@ -28,6 +28,16 @@ jobs:
     name: Analyse statique du code Java
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    # GitHub n'accorde qu'un jeton en lecture seule aux executions declenchees par
+    # Dependabot. CodeQL ne peut donc pas televerser ses resultats, et le travail echoue
+    # pour une raison qui n'a rien a voir avec la securite du code.
+    #
+    # Ces demandes de fusion ne changent que des numeros de version. L'analyse tourne de
+    # toute facon sur master apres fusion, et chaque semaine.
+    #
+    # Le travail suivant, lui, continue de s'executer : il n'ecrit rien et n'a besoin
+    # d'aucun droit particulier.
+    if: github.actor != 'dependabot[bot]'
     permissions:
       contents: read
       security-events: write
