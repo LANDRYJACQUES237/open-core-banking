@@ -7,6 +7,19 @@
 # joignables — aucun d'eux n'etant expose a l'exterieur.
 #
 # ------------------------------------------------------------------------------------
+# **Un pod ne se met pas a jour : il se remplace.** Corriger ce manifeste puis le
+# reappliquer ne change rien au pod en cours ; il faut le supprimer d'abord.
+#
+# Et supprimer peut echouer sur un droit auquel on ne pense pas : une interface graphique
+# passe souvent par l'API d'eviction, qui est une permission distincte de la suppression.
+#
+#     pods "ocb-verification" is forbidden: User "..." cannot create resource
+#     "pods/eviction" in API group "" in the namespace "test"
+#
+# Quand ce droit manque, changer le `name` ci-dessous suffit : le nouveau pod demarre, et
+# l'ancien s'eteint de lui-meme grace a activeDeadlineSeconds.
+# ------------------------------------------------------------------------------------
+#
 # **A supprimer une fois la verification faite.**
 #
 # Il ne detient aucun droit Kubernetes, mais il sait joindre toutes les bases et tous les
@@ -21,7 +34,7 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: ocb-verification
-  namespace: ocb
+  namespace: test
   labels:
     app.kubernetes.io/name: ocb-verification
     app.kubernetes.io/part-of: open-core-banking
