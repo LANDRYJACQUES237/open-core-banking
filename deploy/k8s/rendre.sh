@@ -79,6 +79,14 @@ entete() {
 # Les annotations de hook Helm ont ete retirees : sans Helm pour les honorer, elles
 # donneraient a lire une garantie d'ordonnancement qui n'existe pas.
 #
+# REAPPLIQUER UN Job DEJA CREE ECHOUE. Le spec.template d'un Job est immuable : une
+# seconde application renvoie
+#
+#     Job.batch "..." is invalid: spec.template: Invalid value: ...: field is immutable
+#
+# Il faut supprimer les Job puis les appliquer de nouveau. C'est sans risque : Flyway
+# est idempotent, une migration deja appliquee est constatee et non rejouee.
+#
 # $1
 # =====================================================================================
 
