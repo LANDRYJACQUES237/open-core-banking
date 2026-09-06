@@ -1,0 +1,150 @@
+# =====================================================================================
+# Kafka, en noeud unique.
+#
+# Un seul broker, sans replication : c'est une plateforme de demonstration. Un deploiement
+# reel voudrait trois noeuds et un facteur de replication de trois — sans quoi la perte
+# d'un disque perd des evenements deja acquittes.
+#
+# **Ce que ce raccourci ne compromet pas.** Le relais d'outbox garantit qu'un evenement
+# perdu par le courtier sera republie : la ligne reste a `published_at IS NULL` tant que
+# l'envoi n'a pas reussi. La source de verite est la base, pas le courtier. C'est
+# precisement ce que le Transactional Outbox existe pour obtenir, et c'est ce qui rend un
+# broker unique acceptable ici.
+#
+# 3.8.1 et non une version plus recente : l'entrypoint des images 3.9 valide la
+# configuration au formatage et refuse certaines adresses annoncees. La contrainte est la
+# meme qu'en test et qu'en Compose, et changer de version demande de la reverifier.
+# =====================================================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: ocb-kafka
+  labels:
+    app.kubernetes.io/name: ocb-kafka
+    app.kubernetes.io/part-of: open-core-banking
+spec:
+  # Service sans adresse propre : le DNS renvoie directement l'adresse du pod. Un courtier
+  # doit annoncer une adresse que ses clients peuvent joindre telle quelle, et une adresse
+  # de service qui repartit la charge n'a pas de sens pour un protocole ou le client doit
+  # atteindre un broker precis.
+  clusterIP: None
+  ports:
+    - name: kafka
+      port: 9092
+      targetPort: kafka
+  selector:
+    app.kubernetes.io/name: ocb-kafka
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ocb-kafka
+  labels:
+    app.kubernetes.io/name: ocb-kafka
+    app.kubernetes.io/part-of: open-core-banking
+spec:
+  serviceName: ocb-kafka
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ocb-kafka
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ocb-kafka
+        app.kubernetes.io/part-of: open-core-banking
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        # UID de l'utilisateur appuser dans l'image apache/kafka.
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: kafka
+          image: apache/kafka:3.8.1
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          ports:
+            - name: kafka
+              containerPort: 9092
+            - name: controller
+              containerPort: 9093
+          env:
+            - name: KAFKA_NODE_ID
+              value: "1"
+            # Mode KRaft : le meme processus est courtier et controleur. Pas de ZooKeeper,
+            # donc un systeme avec etat de moins a exploiter.
+            - name: KAFKA_PROCESS_ROLES
+              value: broker,controller
+            - name: KAFKA_LISTENERS
+              value: PLAINTEXT://:9092,CONTROLLER://:9093
+            # L'adresse annoncee est celle du pod dans le service sans adresse propre.
+            # Annoncer autre chose ferait echouer les clients apres leur premiere requete
+            # de metadonnees, avec une erreur qui ne designerait pas la cause.
+            - name: KAFKA_ADVERTISED_LISTENERS
+              value: PLAINTEXT://ocb-kafka-0.ocb-kafka:9092
+            - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+              value: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+            - name: KAFKA_INTER_BROKER_LISTENER_NAME
+              value: PLAINTEXT
+            - name: KAFKA_CONTROLLER_LISTENER_NAMES
+              value: CONTROLLER
+            - name: KAFKA_CONTROLLER_QUORUM_VOTERS
+              value: 1@ocb-kafka-0.ocb-kafka:9093
+            # Un seul noeud : tout facteur de replication superieur a 1 laisserait les
+            # topics internes en echec de creation, et le courtier paraitrait demarre sans
+            # etre utilisable.
+            - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
+              value: "1"
+            - name: KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS
+              value: "0"
+            - name: KAFKA_LOG_DIRS
+              value: /var/lib/kafka/data
+          volumeMounts:
+            - name: donnees
+              mountPath: /var/lib/kafka
+          # La sonde interroge le protocole plutot que le port : un port ouvert ne dit pas
+          # qu'un courtier repond, et un demarrage bloque au formatage laisserait le port
+          # ouvert sans jamais servir.
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: kafka
+            initialDelaySeconds: 60
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 250m
+              memory: 768Mi
+            limits:
+              memory: 1536Mi
+  volumeClaimTemplates:
+    - metadata:
+        name: donnees
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: longhorn-general
+        resources:
+          requests:
+            storage: 8Gi
