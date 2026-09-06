@@ -1,7 +1,18 @@
 #!/usr/bin/env bash
 #
 # =====================================================================================
-# Rend les manifestes applicatifs a partir du chart Helm.
+# Prepare TOUS les manifestes pour un namespace, en deux temps.
+#
+#   1. Les manifestes ecrits a la main (01 a 03, bastion) sont retargetes sur le
+#      namespace demande.
+#   2. Les manifestes applicatifs (04, 05) sont rendus depuis le chart Helm.
+#
+# Une seule commande apres chaque git pull. Le retargetage etait auparavant un sed a
+# taper de memoire ; l'oublier depose les ressources dans le mauvais namespace, et
+# l'erreur parle d'un droit manquant plutot que d'un namespace errone :
+#
+#     jobs.batch "..." is forbidden: User "..." cannot update resource "jobs"
+#     in API group "batch" in the namespace "ocb"
 #
 #     ./deploy/k8s/rendre.sh [namespace]
 #
@@ -93,6 +104,15 @@ entete() {
 EOF
 }
 
+# Retargetage des manifestes ecrits a la main. Le placeholder `ocb` est remplace sur
+# place ; relancer le script avec un autre namespace fonctionne, puisque la valeur
+# precedente est elle aussi reconnue.
+printf 'Retargetage des manifestes ecrits a la main...\n'
+for f in deploy/k8s/01-postgres.yaml deploy/k8s/02-kafka.yaml \
+         deploy/k8s/03-keycloak.yaml deploy/k8s/bastion.yaml; do
+    sed -i -E "s/^  namespace: [A-Za-z0-9-]+$/  namespace: $NAMESPACE/" "$f"
+done
+
 printf 'Rendu des migrations...\n'
 {
     entete "Appliquer CE fichier AVANT 05-services.yaml, et verifier que les quatre Job
@@ -109,6 +129,7 @@ printf 'Rendu des services...\n'
 
 printf '\n  %-32s %s ressources\n' "04-migrations.yaml" "$(grep -c '^kind:' deploy/k8s/04-migrations.yaml)"
 printf '  %-32s %s ressources\n' "05-services.yaml" "$(grep -c '^kind:' deploy/k8s/05-services.yaml)"
-printf '\n  Namespace cible : %s\n' "$NAMESPACE"
+printf '\n  Namespace cible : %s (%s fichiers)\n' "$NAMESPACE" \
+    "$(grep -l "namespace: $NAMESPACE" deploy/k8s/*.yaml | wc -l)"
 printf '  Aucune annotation de hook ne subsiste : %s\n' \
     "$(grep -c 'helm.sh/hook' deploy/k8s/04-migrations.yaml || true)"
