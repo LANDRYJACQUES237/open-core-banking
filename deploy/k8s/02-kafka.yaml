@@ -34,7 +34,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: ocb-kafka
-  namespace: test
+  namespace: ocb
   labels:
     app.kubernetes.io/name: ocb-kafka
     app.kubernetes.io/part-of: open-core-banking
@@ -44,6 +44,22 @@ spec:
   # de service qui repartit la charge n'a pas de sens pour un protocole ou le client doit
   # atteindre un broker precis.
   clusterIP: None
+  # SANS CETTE LIGNE, RIEN NE DEMARRE.
+  #
+  # Un Service sans adresse propre ne publie l'enregistrement DNS d'un pod qu'une fois ce
+  # pod pret. Kafka, lui, doit resoudre son PROPRE nom des le demarrage : c'est l'adresse
+  # qu'il annonce et celle de son controleur KRaft.
+  #
+  # Le pod attend donc le DNS, et le DNS attend que le pod soit pret. Le blocage est
+  # circulaire et l'erreur ne le dit pas — elle parle d'un hote inconnu, ce qui envoie
+  # chercher du cote du nom plutot que du cote de la disponibilite :
+  #
+  #     java.net.UnknownHostException: ocb-kafka-0.ocb-kafka
+  #
+  # Publier les adresses des pods non encore prets rompt le cycle. C'est sans danger ici :
+  # ce nom ne sert qu'au courtier pour se joindre lui-meme, et les clients passent par la
+  # sonde de disponibilite avant d'etre routes.
+  publishNotReadyAddresses: true
   ports:
     - name: kafka
       port: 9092
@@ -56,7 +72,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: ocb-kafka
-  namespace: test
+  namespace: ocb
   labels:
     app.kubernetes.io/name: ocb-kafka
     app.kubernetes.io/part-of: open-core-banking
