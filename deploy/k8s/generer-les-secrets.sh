@@ -57,6 +57,7 @@ NOTIFICATION_APP=$(mdp); NOTIFICATION_OWNER=$(mdp)
 # Secrets clients du realm. Ils remplacent les valeurs `dev-only-*` du depot, qui sont
 # publiques et ne doivent jamais servir a une instance joignable depuis un reseau.
 CLIENT_PAYMENT=$(mdp)
+CLIENT_MERCHANT=$(mdp)
 CLIENT_OPS=$(mdp)
 
 # Secrets de signature des webhooks. Un secret vide validerait toute signature calculee
@@ -102,6 +103,7 @@ stringData:
   KC_BOOTSTRAP_ADMIN_PASSWORD: "$KC_ADMIN"
   KC_DB_PASSWORD: "$KC_DB"
   OCB_CLIENT_SECRET_PAYMENT: "$CLIENT_PAYMENT"
+  OCB_CLIENT_SECRET_MERCHANT: "$CLIENT_MERCHANT"
   OCB_CLIENT_SECRET_OPS: "$CLIENT_OPS"
 
 ---
@@ -196,10 +198,15 @@ cat >&2 <<RESUME
 
   A conserver hors du depot, le temps du deploiement :
 
-    Console Keycloak    utilisateur "admin", mot de passe : $KC_ADMIN
-    Client ops-console  secret : $CLIENT_OPS
+    Console Keycloak     utilisateur "admin", mot de passe : $KC_ADMIN
+    Client merchant-demo secret : $CLIENT_MERCHANT
+    Client ops-console   secret : $CLIENT_OPS
 
-  Le second est celui a transmettre a qui doit consulter la plateforme en lecture seule.
-  Il ne porte que ledger:read, provider:read et notification:read — aucune ecriture.
+  merchant-demo sert a faire vivre la plateforme : il initie encaissements, decaissements
+  et transferts. Gardez-le.
+
+  ops-console est celui a transmettre a un observateur externe. Il ne porte que
+  ledger:read, provider:read et notification:read : il peut tout consulter et ne peut
+  rien ecrire, ni comptablement ni fonctionnellement.
 
 RESUME

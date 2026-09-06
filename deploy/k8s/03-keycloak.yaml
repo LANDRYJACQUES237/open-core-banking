@@ -1,0 +1,370 @@
+# =====================================================================================
+# Keycloak, en mode production, avec un realm sans aucun secret.
+#
+# Deux differences avec la pile Docker Compose, et ce sont des durcissements.
+#
+# **`start` et non `start-dev`.** Le mode developpement desactive des verifications et
+# n'est destine a rien d'autre qu'un poste. Le mode production exige une base de donnees
+# externe : c'est PostgreSQL, base `keycloak`, role dedie.
+#
+# **Le realm ne contient aucun secret.** Les valeurs sont des references
+# `${VARIABLE}` que Keycloak resout a l'import depuis l'environnement, lui-meme
+# alimente par un Secret. Le realm de developpement, lui, porte des secrets `dev-only-*`
+# en clair et versionnes : ils ne protegent rien et ne doivent jamais servir ici.
+#
+# Verifie avant d'etre ecrit : un jeton demande avec la valeur de l'environnement est
+# accepte, le meme demande avec le litteral non substitue est refuse.
+#
+# ------------------------------------------------------------------------------------
+# **La console d'administration n'est pas exposee.** Le Service est un ClusterIP et aucun
+# Ingress ne pointe dessus. Y acceder demande un port-forward, donc un droit sur le
+# cluster — pas un mot de passe devine.
+# ------------------------------------------------------------------------------------
+# =====================================================================================
+
+# -------------------------------------------------------------------------------------
+# **Le namespace est inscrit dans ce fichier, et doit correspondre a la cible.**
+#
+#     sed -i 's/^  namespace: ocb$/  namespace: VOTRE-NAMESPACE/' deploy/k8s/*.yaml
+# -------------------------------------------------------------------------------------
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ocb-keycloak-realm
+  namespace: ocb
+  labels:
+    app.kubernetes.io/name: ocb-keycloak
+    app.kubernetes.io/part-of: open-core-banking
+data:
+  realm-ocb.json: |
+    {
+      "realm": "ocb",
+      "displayName": "Open Core Banking",
+      "enabled": true,
+      "sslRequired": "none",
+      "registrationAllowed": false,
+      "accessTokenLifespan": 300,
+      "clientScopes": [
+        {
+          "name": "ledger:post",
+          "description": "Portee ledger:post, porteuse de l'audience ledger-service.",
+          "protocol": "openid-connect",
+          "attributes": {
+            "include.in.token.scope": "true",
+            "display.on.consent.screen": "false"
+          },
+          "protocolMappers": [
+            {
+              "name": "audience-ledger-service",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-audience-mapper",
+              "consentRequired": false,
+              "config": {
+                "included.custom.audience": "ledger-service",
+                "access.token.claim": "true",
+                "id.token.claim": "false"
+              }
+            }
+          ]
+        },
+        {
+          "name": "ledger:read",
+          "description": "Portee ledger:read, porteuse de l'audience ledger-service.",
+          "protocol": "openid-connect",
+          "attributes": {
+            "include.in.token.scope": "true",
+            "display.on.consent.screen": "false"
+          },
+          "protocolMappers": [
+            {
+              "name": "audience-ledger-service",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-audience-mapper",
+              "consentRequired": false,
+              "config": {
+                "included.custom.audience": "ledger-service",
+                "access.token.claim": "true",
+                "id.token.claim": "false"
+              }
+            }
+          ]
+        },
+        {
+          "name": "payment:initiate",
+          "description": "Portee payment:initiate, porteuse de l'audience payment-service.",
+          "protocol": "openid-connect",
+          "attributes": {
+            "include.in.token.scope": "true",
+            "display.on.consent.screen": "false"
+          },
+          "protocolMappers": [
+            {
+              "name": "audience-payment-service",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-audience-mapper",
+              "consentRequired": false,
+              "config": {
+                "included.custom.audience": "payment-service",
+                "access.token.claim": "true",
+                "id.token.claim": "false"
+              }
+            }
+          ]
+        },
+        {
+          "name": "payment:read",
+          "description": "Portee payment:read, porteuse de l'audience payment-service.",
+          "protocol": "openid-connect",
+          "attributes": {
+            "include.in.token.scope": "true",
+            "display.on.consent.screen": "false"
+          },
+          "protocolMappers": [
+            {
+              "name": "audience-payment-service",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-audience-mapper",
+              "consentRequired": false,
+              "config": {
+                "included.custom.audience": "payment-service",
+                "access.token.claim": "true",
+                "id.token.claim": "false"
+              }
+            }
+          ]
+        },
+        {
+          "name": "provider:read",
+          "description": "Portee provider:read, porteuse de l'audience provider-service.",
+          "protocol": "openid-connect",
+          "attributes": {
+            "include.in.token.scope": "true",
+            "display.on.consent.screen": "false"
+          },
+          "protocolMappers": [
+            {
+              "name": "audience-provider-service",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-audience-mapper",
+              "consentRequired": false,
+              "config": {
+                "included.custom.audience": "provider-service",
+                "access.token.claim": "true",
+                "id.token.claim": "false"
+              }
+            }
+          ]
+        },
+        {
+          "name": "notification:read",
+          "description": "Portee notification:read, porteuse de l'audience notification-service.",
+          "protocol": "openid-connect",
+          "attributes": {
+            "include.in.token.scope": "true",
+            "display.on.consent.screen": "false"
+          },
+          "protocolMappers": [
+            {
+              "name": "audience-notification-service",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-audience-mapper",
+              "consentRequired": false,
+              "config": {
+                "included.custom.audience": "notification-service",
+                "access.token.claim": "true",
+                "id.token.claim": "false"
+              }
+            }
+          ]
+        }
+      ],
+      "defaultDefaultClientScopes": [],
+      "clients": [
+        {
+          "clientId": "payment-service",
+          "description": "Compte de service du moteur de paiement. Seul detenteur de ledger:post ; porte aussi ledger:read, l'interdiction de decouvert exigeant de lire le solde avant d'engager les fonds.",
+          "enabled": true,
+          "protocol": "openid-connect",
+          "publicClient": false,
+          "secret": "${OCB_CLIENT_SECRET_PAYMENT}",
+          "serviceAccountsEnabled": true,
+          "standardFlowEnabled": false,
+          "implicitFlowEnabled": false,
+          "directAccessGrantsEnabled": false,
+          "defaultClientScopes": [
+            "ledger:post",
+            "ledger:read"
+          ],
+          "optionalClientScopes": [],
+          "attributes": {
+            "access.token.lifespan": "300"
+          }
+        },
+        {
+          "clientId": "merchant-demo",
+          "description": "Marchand. Initie encaissements, decaissements et transferts ; ne touche jamais au grand livre.",
+          "enabled": true,
+          "protocol": "openid-connect",
+          "publicClient": false,
+          "secret": "${OCB_CLIENT_SECRET_MERCHANT}",
+          "serviceAccountsEnabled": true,
+          "standardFlowEnabled": false,
+          "implicitFlowEnabled": false,
+          "directAccessGrantsEnabled": false,
+          "defaultClientScopes": [
+            "payment:initiate",
+            "payment:read"
+          ],
+          "optionalClientScopes": [],
+          "attributes": {
+            "access.token.lifespan": "300"
+          }
+        },
+        {
+          "clientId": "ops-console",
+          "description": "Exploitation, lecture seule sur les trois surfaces de diagnostic. C'est le client remis a un observateur externe : il ne peut rien ecrire, ni comptablement ni fonctionnellement.",
+          "enabled": true,
+          "protocol": "openid-connect",
+          "publicClient": false,
+          "secret": "${OCB_CLIENT_SECRET_OPS}",
+          "serviceAccountsEnabled": true,
+          "standardFlowEnabled": false,
+          "implicitFlowEnabled": false,
+          "directAccessGrantsEnabled": false,
+          "defaultClientScopes": [
+            "ledger:read",
+            "provider:read",
+            "notification:read"
+          ],
+          "optionalClientScopes": [],
+          "attributes": {
+            "access.token.lifespan": "300"
+          }
+        }
+      ]
+    }
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ocb-keycloak
+  namespace: ocb
+  labels:
+    app.kubernetes.io/name: ocb-keycloak
+    app.kubernetes.io/part-of: open-core-banking
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+  selector:
+    app.kubernetes.io/name: ocb-keycloak
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ocb-keycloak
+  namespace: ocb
+  labels:
+    app.kubernetes.io/name: ocb-keycloak
+    app.kubernetes.io/part-of: open-core-banking
+spec:
+  replicas: 1
+  # Recreate plutot que RollingUpdate : deux instances Keycloak qui migrent le meme schema
+  # au demarrage se marcheraient dessus.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ocb-keycloak
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ocb-keycloak
+        app.kubernetes.io/part-of: open-core-banking
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:26.0
+          imagePullPolicy: IfNotPresent
+          args: ["start", "--import-realm"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: management
+              containerPort: 9000
+          env:
+            - name: KC_DB
+              value: postgres
+            - name: KC_DB_URL
+              value: jdbc:postgresql://ocb-postgres:5432/keycloak
+            - name: KC_DB_USERNAME
+              value: keycloak
+            # TLS absent devant Keycloak : le trafic reste dans le cluster, et aucun
+            # Ingress ne pointe ici. Exposer ce service demanderait de reprendre ce point.
+            - name: KC_HTTP_ENABLED
+              value: "true"
+            # Sans nom d'hote fige, Keycloak deduit l'emetteur de l'adresse appelee : un
+            # jeton demande depuis un pod porterait un `iss` different de celui demande
+            # ailleurs, et la validation echouerait selon le chemin emprunte.
+            - name: KC_HOSTNAME
+              value: http://ocb-keycloak:8080
+            - name: KC_HOSTNAME_STRICT
+              value: "false"
+            - name: KC_HEALTH_ENABLED
+              value: "true"
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              value: admin
+          # Mot de passe d'administration, mot de passe de base, et les trois secrets
+          # clients que le realm resout a l'import.
+          envFrom:
+            - secretRef:
+                name: ocb-keycloak
+          volumeMounts:
+            - name: realm
+              mountPath: /opt/keycloak/data/import
+              readOnly: true
+          # Les sondes visent le port de gestion, separe du port applicatif depuis
+          # Keycloak 25 : /health/ready n'est pas joignable sur 8080.
+          startupProbe:
+            httpGet:
+              path: /health/ready
+              port: management
+            periodSeconds: 5
+            failureThreshold: 60
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: management
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: management
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 250m
+              memory: 768Mi
+            limits:
+              memory: 1536Mi
+      volumes:
+        - name: realm
+          configMap:
+            name: ocb-keycloak-realm
