@@ -41,7 +41,7 @@ jobs:
       # viendra en complement quand le depot sera public.
       - name: Verifier qu'aucun secret n'est versionne
         run: |
-          tracked=$(git ls-files | grep -E '(^|/)\.env$|(^|/)\.env\.(local|dev|prod|production)$|\.pem$|\.key$|\.p12$|\.jks$|(^|/)id_rsa' || true)
+          tracked=$(git ls-files | grep -E '(^|/)\.env$|(^|/)\.env\.(local|dev|prod|production)$|\.pem$|\.key$|\.p12$|\.jks$|(^|/)id_rsa|secrets?\.(ya?ml|json)$' || true)
           if [ -n "$tracked" ]; then
             echo "::error::Fichiers sensibles versionnes :"
             echo "$tracked"

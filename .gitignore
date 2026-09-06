@@ -36,3 +36,11 @@ logs/
 # en priorite au run suivant. C'est un cache local de la machine du developpeur :
 # le versionner ferait diverger le comportement des tests entre postes et CI.
 .jqwik-database
+
+# Manifestes de Secret produits par deploy/k8s/generer-les-secrets.sh.
+#
+# Ils contiennent des mots de passe en clair. Le motif est large a dessein : mieux vaut
+# ignorer un fichier de trop qu'en versionner un.
+*secret*.yaml
+*secret*.yml
+*secrets*.json
